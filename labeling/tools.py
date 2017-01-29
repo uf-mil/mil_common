@@ -37,7 +37,7 @@ class BaseTool(object):
 
     def clear_mask(self):
         ''' Clear the current mask '''
-        self.mask = np.zeros(shape=self.image.shape)
+        self.mask = np.zeros(shape=self.image.shape[:2])
 
     def clear_overlay(self):
         ''' Clear the current overlay '''
@@ -57,6 +57,11 @@ class BaseTool(object):
     def image(self):
         ''' Gets the current image being segmeneted '''
         return self._draw_data.get('image', None)
+
+    @image.setter
+    def image(self, image):
+        ''' Sets the current image being segmeneted '''
+        self._draw_data['image'] = image
 
     @property
     def mask(self):
@@ -112,7 +117,8 @@ class PolygonTool(BaseTool):
         self.lines = []
 
         if cursor_pos is not None:
-            self._draw_cursor(*cursor_pos)
+            self._last_x, self._last_y = cursor_pos
+            self._draw_cursor()
 
     def key_press(self, key):
         if len(self.lines) < 1:
@@ -124,10 +130,11 @@ class PolygonTool(BaseTool):
 
         if key == '=':
             self.in_draw = False
-            self.lines.append(self.lines[0])
-            pts = np.array(self.lines).reshape((-1, 1, 2))
-            cv2.polylines(self.mask, pts, True, 255)
 
+            pts = np.array(self.lines).reshape((-1, 1, 2)).astype(np.int32)
+            cv2.fillPoly(self.mask, [pts], 255)
+
+            self.lines.append(self.lines[0])
             self.clear_cursor()
         
         if key in ['-', '=']:
@@ -135,9 +142,12 @@ class PolygonTool(BaseTool):
 
     def _redraw(self):
         self.overlay = np.zeros(shape=self.image.shape)
-        for i in range(len(self.lines) - 1):
-            cv2.line(self.overlay, self.lines[i], self.lines[i + 1], 
-                     self._line_color, self._line_width)
+        pts = np.array(self.lines).reshape((-1, 1, 2)).astype(np.int32)
+        cv2.polylines(self.overlay, [pts], False, self._line_color, self._line_width)
+
+        # for i in range(len(self.lines) - 1):
+        #     cv2.line(self.overlay, self.lines[i], self.lines[i + 1], 
+        #              self._line_color, self._line_width)
 
     def mouse_cb(self, event, x, y, flags, param, **kwargs):
         self._last_x = x
@@ -172,7 +182,7 @@ class PolygonTool(BaseTool):
             cv2.line(self.cursor, (x, y), self.lines[-1], self._line_color, self._line_width)
 
 class PaintBrushTool(BaseTool):
-    name = "Paintbrush Tool"
+    name = "Paint Brush Tool"
 
     def init(self):
         self.size = 10

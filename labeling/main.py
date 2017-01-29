@@ -27,15 +27,19 @@ class LabelerInterface():
         blank = np.zeros(shape=(480, 640))
         self._draw_data = {'image': blank, 'mask': blank, 'overlay': blank, 'cursor': blank}
 
-        self._reserved_keys = {'q': 'quit', 's': 'save and continue', 'space': 'continue',
-                               'c': 'clear screen'}
+        self._reserved_keys = {'q': 'quit', 's': 'save and continue', ' ': 'continue',
+                               'c': 'clear screen', 'b': 'back one image'}
 
         # Maps shortcut keys to tools
         self.tools = self._generate_hotkeys(tools)
         self.active_tool = self.tools.values()[0]
         
         # Where was the last position of the cursor 
-        self._last_mouse = None
+        self.last_mouse = None
+
+        # So we can go back an image
+        self.in_back_image = False
+        self.last_image = np.dstack([blank] * 3)
 
         self._name = "tool"
         cv2.namedWindow(self._name, cv2.WINDOW_NORMAL)
@@ -68,7 +72,7 @@ class LabelerInterface():
     
     def _mouse_cb(self, *args, **kwargs):
         ''' Handles drawing and what not '''
-        self._last_mouse = (args[1], args[2])
+        self.last_mouse = (args[1], args[2])
         self.active_tool.mouse_cb(*args, **kwargs)
 
     def _apply_layers_to_image(self, layers, image):
@@ -108,36 +112,62 @@ class LabelerInterface():
         overlay_opacity = 0.9
         cursor_opacity = 1.0
         while key is not 'q':
-            if key == ' ':
-                continue
+            if self.in_back_image:
+                # We are currently editing the previous image
+                self.active_tool.image = self.last_image
+                self.in_back_image = False
+            else:
+                self.active_tool.image = image_provider.get_next_image()
 
-            image = image_provider.get_next_image()
-            self._draw_data['image'] = image
             
-            # We stay on this image until a reserved_key get's pressed
+            # We stay on this image until a reserved_key gets pressed
             key = None
             while key not in self._reserved_keys:
-                if key == ' ':
-                    break
-
                 layers = [self.active_tool.mask * mask_opacity, 
                           self.active_tool.overlay * overlay_opacity,
                           self.active_tool.cursor * cursor_opacity]
+
                 cv2.imshow(self._name, self._apply_layers_to_image(layers, self.active_tool.image)) 
 
                 key = chr(cv2.waitKey(10) & 0xFF)
                 
-                if key == 's':
-                    print "SAVING pair"
-
                 if key in self.tools.keys():
                     self.active_tool = self.tools[key]
-                    self.active_tool.set_active(self._last_mouse)
+                    self.active_tool.set_active(self.last_mouse)
                     self._print_options()
 
-                if key not in self._reserved_keys:
+                elif key not in self._reserved_keys:
                     self.active_tool.key_press(key)
 
+                elif key == 's':
+                    # save
+                    self.save()
+
+                elif key == 'b':
+                    key = None
+                    if not self.in_back_image:
+                        current_image = self.active_tool.image
+                        self.active_tool.image = self.last_image
+                        self.last_image = current_image
+
+                    self.in_back_image = True
+
+                elif key == 'c':
+                    # clear
+                    key = None
+                    self.active_tool.set_active(self.last_mouse)
+                    self.active_tool.clear_mask()
+
+            if not self.in_back_image:
+                self.last_image = self.active_tool.image
+
+        cv2.destroyAllWindows()
+        choice = raw_input(p.text("\nDo you want to save first? ").bold("(y/N) : "))
+        if choice.lower() is 'y':
+            self.save()
+
+    def save(self):
+        print "SAVING pair"
 
 # =============================================================================
 
@@ -182,7 +212,7 @@ def _menu_options(options, name=None):
 
 if __name__ == "__main__":
 
-    print p.bold("\nWelcome to the image tool!")
+    print p.bold("\nWelcome to the image segmentation tool!")
 
     image_provider = _menu_options(image_providers, "image providers")
     labeler = LabelerInterface()

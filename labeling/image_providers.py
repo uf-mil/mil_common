@@ -22,7 +22,7 @@ class RandomColors(BaseImageProvider):
 
     def get_next_image(self):
         ''' Generates random colors '''
-        bgr = np.random.randint(0, 20, 3)
+        bgr = np.random.randint(0, 200, 3)
         image = np.zeros((480, 640, 3))
         image[:, :] = bgr
         return image
