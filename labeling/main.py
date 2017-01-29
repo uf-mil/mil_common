@@ -2,6 +2,8 @@
 import cv2
 import numpy as np
 from sub8_tools import text_effects
+import time
+import os
 
 # Image providers ==============
 from image_providers import RandomColors, Webcam
@@ -41,6 +43,15 @@ class LabelerInterface():
         # So we can go back an image
         self.in_back_image = False
         self.last_image = np.dstack([blank] * 3)
+
+        # Incremental save counter
+        self.save_count = 0
+        
+        # Path where we will save images (create it if it's not there)
+        path = os.path.dirname(os.path.realpath(__file__))
+        self.folder_path = os.path.join(path, "images")
+        if not os.path.exists(self.folder_path):
+            os.makedirs(self.folder_path)
 
         self._name = "tool"
         cv2.namedWindow(self._name, cv2.WINDOW_NORMAL)
@@ -168,7 +179,19 @@ class LabelerInterface():
             self.save()
 
     def save(self):
-        print "SAVING pair"
+        filetype = ".png"
+        name = time.strftime("%m-%d_%H-%M-%S") + "_{}".format(self.save_count)
+        self.save_count += 1
+        
+        image_path = os.path.join(self.folder_path, name + filetype)
+        mask_path = os.path.join(self.folder_path, name + "_mask" + filetype)
+        print p.text("Saving pair as: ").bold(name).text(".")
+
+        # Save image
+        cv2.imwrite(image_path, self.active_tool.image)
+
+        # Save mask
+        cv2.imwrite(mask_path, self.active_tool.mask)
 
 # =============================================================================
 
