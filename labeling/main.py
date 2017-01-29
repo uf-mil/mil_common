@@ -4,9 +4,9 @@ import numpy as np
 from sub8_tools import text_effects
 
 # Image providers ==============
-from image_providers import RandomColors
+from image_providers import RandomColors, Webcam
 
-image_providers = [RandomColors] 
+image_providers = [RandomColors, Webcam] 
 
 # Tools ====================
 from tools import PaintBrushTool, PolygonTool
@@ -24,8 +24,9 @@ p = text_effects.Printer()
 class LabelerInterface():
     '''Provides tools to create polygon segments'''
     def __init__(self, *args, **kwargs):
-        blank = np.zeros(shape=(480, 640))
-        self._draw_data = {'image': blank, 'mask': blank, 'overlay': blank, 'cursor': blank}
+        blank = np.zeros(shape=(480, 640)).astype(np.uint8)
+        self._draw_data = {'image': np.copy(blank), 'mask': np.copy(blank), 
+                           'overlay': np.copy(blank), 'cursor': np.copy(blank)}
 
         self._reserved_keys = {'q': 'quit', 's': 'save and continue', ' ': 'continue',
                                'c': 'clear screen', 'b': 'back one image'}
@@ -118,15 +119,14 @@ class LabelerInterface():
                 self.in_back_image = False
             else:
                 self.active_tool.image = image_provider.get_next_image()
-
-            
+             
             # We stay on this image until a reserved_key gets pressed
             key = None
             while key not in self._reserved_keys:
                 layers = [self.active_tool.mask * mask_opacity, 
                           self.active_tool.overlay * overlay_opacity,
                           self.active_tool.cursor * cursor_opacity]
-
+                          
                 cv2.imshow(self._name, self._apply_layers_to_image(layers, self.active_tool.image)) 
 
                 key = chr(cv2.waitKey(10) & 0xFF)
@@ -144,6 +144,7 @@ class LabelerInterface():
                     self.save()
 
                 elif key == 'b':
+                    # go back an image
                     key = None
                     if not self.in_back_image:
                         current_image = self.active_tool.image
@@ -163,7 +164,7 @@ class LabelerInterface():
 
         cv2.destroyAllWindows()
         choice = raw_input(p.text("\nDo you want to save first? ").bold("(y/N) : "))
-        if choice.lower() is 'y':
+        if choice.lower() == 'y':
             self.save()
 
     def save(self):
@@ -215,6 +216,7 @@ if __name__ == "__main__":
     print p.bold("\nWelcome to the image segmentation tool!")
 
     image_provider = _menu_options(image_providers, "image providers")
+    image_provider.load_source()
     labeler = LabelerInterface()
     labeler.start_labeling(image_provider)
 
