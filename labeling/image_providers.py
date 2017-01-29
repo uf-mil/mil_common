@@ -1,4 +1,5 @@
 import numpy as np
+import cv2
 
 class BaseImageProvider(object):
     '''Classes that provide image sources. Examples may include:
@@ -26,4 +27,14 @@ class RandomColors(BaseImageProvider):
         image = np.zeros((480, 640, 3))
         image[:, :] = bgr
         return image
+
+
+class Webcam(BaseImageProvider):
+    name = "Webcam Capture"
     
+    def load_source(self):
+        self.cam = cv2.VideoCapture(0)
+
+    def get_next_image(self):
+        ret, frame = self.cam.read()
+        return frame

@@ -56,7 +56,7 @@ class BaseTool(object):
     @property
     def image(self):
         ''' Gets the current image being segmeneted '''
-        return self._draw_data.get('image', None)
+        return self._draw_data['image']
 
     @image.setter
     def image(self, image):
@@ -66,7 +66,7 @@ class BaseTool(object):
     @property
     def mask(self):
         ''' Gets the current mask for this segmentation '''
-        return self._draw_data.get('mask', None)
+        return self._draw_data['mask']
 
     @mask.setter
     def mask(self, mask):
@@ -196,6 +196,13 @@ class PaintBrushTool(BaseTool):
         print p.text("Hotkeys are as follows:")
         print p.bold("\t[ , ] : ").text("decrease cursor size.")
         print p.bold("\t[ . ] : ").text("increase cursor size.")
+
+    def set_active(self, mouse_pos=None):
+        self.clear_overlay()
+        self.clear_cursor()
+
+        if mouse_pos is not None:
+            cv2.circle(self.cursor, mouse_pos, self.size, self._cursor_color, 2)
 
     def key_press(self, key):
         if key == ',':
