@@ -11,9 +11,9 @@ from image_providers import RandomColors, Webcam
 image_providers = [RandomColors, Webcam] 
 
 # Tools ====================
-from tools import PaintBrushTool, PolygonTool
+from tools import PaintBrushTool, PolygonTool, MoveTool
 
-tools = [PaintBrushTool, PolygonTool]
+tools = [PaintBrushTool, PolygonTool, MoveTool]
 
 
 '''
@@ -147,7 +147,7 @@ class LabelerInterface():
                     self.active_tool.set_active(self.last_mouse)
                     self._print_options()
 
-                elif key not in self._reserved_keys:
+                elif key not in self._reserved_keys and ord(key) != 255:
                     self.active_tool.key_press(key)
 
                 elif key == 's':

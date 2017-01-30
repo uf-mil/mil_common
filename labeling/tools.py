@@ -181,6 +181,7 @@ class PolygonTool(BaseTool):
         if self.in_draw:
             cv2.line(self.cursor, (x, y), self.lines[-1], self._line_color, self._line_width)
 
+
 class PaintBrushTool(BaseTool):
     name = "Paint Brush Tool"
 
@@ -228,3 +229,91 @@ class PaintBrushTool(BaseTool):
         if flags == cv2.EVENT_FLAG_SHIFTKEY + cv2.EVENT_FLAG_LBUTTON:
             cv2.circle(self.mask, (x, y), self.size, 0, -1)
             
+
+class MoveTool(BaseTool):
+    name = "Move Tool"
+
+    def init(self):
+        self.last_x = -1
+        self.last_y = -1
+
+        self.moving = False
+        self.shift_mode = False
+        self.temp_mask = np.copy(self.mask)
+        self.last_offset = (0, 0)
+        self.dx = self.dy = 0
+        
+        self._line_color = (255, 255, 255)
+
+    def print_options(self):
+        desc = p.text("\nClick and drag to move the current mask. ")
+        print desc.text("Shift click and drag to move with more percision")
+        print p.text("Hotkeys are as follows:")
+        print p.bold("\t[ - ] : ").text("undo the previous change.")
+
+    def set_active(self, mouse_pos=None):
+        self.clear_overlay()
+        self.clear_cursor()
+
+        self.shift_mode = False
+        self.moving = False
+        self.temp_mask = np.copy(self.mask)
+        self.last_offset = (0, 0)
+        self.dx = self.dy = 0
+
+    def key_press(self, key):
+        # R, S, T, Q <= are the letters for the arrow keys
+        if key == 'R':
+            # move up
+            pass
+        elif key == 'S':
+            # move right
+            pass
+        elif key == 'T':
+            # move down
+            pass
+        elif key == 'Q':
+            # move right
+            pass
+        
+        elif key == '-':
+            # Undoes the most recent move
+            t = np.array([[1, 0, 0], [0, 1, 0]])
+            t[:, 2] -=  self.last_offset
+            self.mask = cv2.warpAffine(self.mask, t.astype(np.float32), self.mask.shape[::-1])
+
+    def get_transform(self, x, y):
+        mod = 1
+        if self.shift_mode:
+            mod = 0.3
+
+        dx = (x - self.last_x) * mod
+        dy = (y - self.last_y) * mod
+
+        self.dx += dx
+        self.dy += dy
+        return np.array([[1, 0, self.dx], [0, 1, self.dy]]).astype(np.float64)
+
+    def mouse_cb(self, event, x, y, flags, param, **kwargs):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            self.moving = True
+            self.temp_mask = np.copy(self.mask)
+            self.last_offset = (0, 0)
+
+        elif event == cv2.EVENT_LBUTTONUP:
+            self.moving = False
+            self.shift_mode = False
+            self.last_offset = (self.dx, self.dy)
+            self.dx = self.dy = 0
+        
+        self.shift_mode = flags == cv2.EVENT_FLAG_SHIFTKEY + cv2.EVENT_FLAG_LBUTTON
+
+
+        self.clear_overlay()
+        if self.moving:
+           t = self.get_transform(x, y)
+           self.mask = cv2.warpAffine(self.temp_mask, t, self.mask.shape[::-1])
+
+        self.last_x = x
+        self.last_y = y
+        
