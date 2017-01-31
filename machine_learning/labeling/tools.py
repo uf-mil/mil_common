@@ -145,10 +145,6 @@ class PolygonTool(BaseTool):
         pts = np.array(self.lines).reshape((-1, 1, 2)).astype(np.int32)
         cv2.polylines(self.overlay, [pts], False, self._line_color, self._line_width)
 
-        # for i in range(len(self.lines) - 1):
-        #     cv2.line(self.overlay, self.lines[i], self.lines[i + 1], 
-        #              self._line_color, self._line_width)
-
     def mouse_cb(self, event, x, y, flags, param, **kwargs):
         self._last_x = x
         self._last_y = y
@@ -242,8 +238,6 @@ class MoveTool(BaseTool):
         self.temp_mask = np.copy(self.mask)
         self.last_offset = (0, 0)
         self.dx = self.dy = 0
-        
-        self._line_color = (255, 255, 255)
 
     def print_options(self):
         desc = p.text("\nClick and drag to move the current mask. ")
@@ -262,24 +256,31 @@ class MoveTool(BaseTool):
         self.dx = self.dy = 0
 
     def key_press(self, key):
-        # R, S, T, Q <= are the letters for the arrow keys
-        if key == 'R':
-            # move up
-            pass
-        elif key == 'S':
-            # move right
-            pass
-        elif key == 'T':
-            # move down
-            pass
-        elif key == 'Q':
-            # move right
-            pass
+        # Arrow heys here somehow!
+        # if key == 'R':
+        #     # move up
+        #     t = np.array([[1, 0, 0], [1, 0, 1]])
+        #     self.last_offset = (0, 1)
+        # elif key == 'S':
+        #     # move right
+        #     t = np.array([[1, 0, 1], [1, 0, 0]])
+        #     self.last_offset = (1, 0)
+        # elif key == 'T':
+        #     # move down
+        #     t = np.array([[1, 0, 0], [1, 0, -1]])
+        #     self.last_offset = (0, -1)
+        # elif key == 'Q':
+        #     # move left
+        #     t = np.array([[1, 0, -1], [1, 0, 0]])
+        #     self.last_offset = (-1, 0)
         
-        elif key == '-':
+        if key == '-':
             # Undoes the most recent move
             t = np.array([[1, 0, 0], [0, 1, 0]])
             t[:, 2] -=  self.last_offset
+            self.last_offset = (0, 0)
+
+        if key in ['-']:
             self.mask = cv2.warpAffine(self.mask, t.astype(np.float32), self.mask.shape[::-1])
 
     def get_transform(self, x, y):

@@ -142,6 +142,7 @@ class LabelerInterface():
                 cv2.imshow(self._name, self._apply_layers_to_image(layers, self.active_tool.image)) 
 
                 key = chr(cv2.waitKey(10) & 0xFF)
+                print key
                 
                 if key in self.tools.keys():
                     self.active_tool = self.tools[key]
