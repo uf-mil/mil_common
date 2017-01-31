@@ -24,7 +24,6 @@ p = text_effects.Printer()
 # General Labeler interface ===================================================
 
 class LabelerInterface():
-    '''Provides tools to create polygon segments'''
     def __init__(self, *args, **kwargs):
         blank = np.zeros(shape=(480, 640)).astype(np.uint8)
         self._draw_data = {'image': np.copy(blank), 'mask': np.copy(blank), 
@@ -126,7 +125,9 @@ class LabelerInterface():
         while key is not 'q':
             if self.in_back_image:
                 # We are currently editing the previous image
+                temp = self.active_tool.image
                 self.active_tool.image = self.last_image
+                self.last_image = temp
                 self.in_back_image = False
             else:
                 self.active_tool.image = image_provider.get_next_image()
