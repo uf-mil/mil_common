@@ -1,18 +1,18 @@
 #include <mil_vision_lib/cv_tools.hpp>
 
-bool mil_vision::get3DPointsFromParam(std::string topic, std::vector<cv::Point3f>& points)
+bool mil_vision::get3DPointsFromParam(std::string param, std::vector<cv::Point3f>& points)
 {
     XmlRpc::XmlRpcValue list;
-    if (!ros::param::get(topic, list)) return false;
-    return mil_vision::get3DPointsFromParam(list, points);
+    if (!ros::param::get(param, list)) return false;
+    return mil_vision::get3DPointsFromXml(list, points);
 }
-bool mil_vision::get3DPointsFromParam(ros::NodeHandle& nh, std::string topic, std::vector<cv::Point3f>& points)
+bool mil_vision::get3DPointsFromParam(ros::NodeHandle& nh, std::string param, std::vector<cv::Point3f>& points)
 {
     XmlRpc::XmlRpcValue list;
-    if (!nh.getParam(topic, list)) return false;
-    return mil_vision::get3DPointsFromParam(list, points);   
+    if (!nh.getParam(param, list)) return false;
+    return mil_vision::get3DPointsFromXml(list, points);
 }
-bool mil_vision::get3DPointsFromParam(XmlRpc::XmlRpcValue& list, std::vector<cv::Point3f>& points)
+bool mil_vision::get3DPointsFromXml(XmlRpc::XmlRpcValue& list, std::vector<cv::Point3f>& points)
 {
     if (list.getType() != XmlRpc::XmlRpcValue::TypeArray)
     {
