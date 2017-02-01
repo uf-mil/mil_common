@@ -5,6 +5,8 @@ import threading_helpers
 import geometry_helpers
 import rviz_helpers
 import cv_debug
+import text_effects
+import download
 
 from init_helpers import *
 from image_helpers import *
