@@ -1,3 +1,6 @@
 # swap files
 *.swp
 *~
+
+# python
+*.pyc
