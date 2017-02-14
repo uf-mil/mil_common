@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package>
-  <name>machine_learning</name>
+  <name>mil_machine_learning</name>
   <version>0.0.0</version>
   <description>The machine learning package for MIL</description>
 

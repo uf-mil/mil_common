@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(machine_learning)
+project(mil_machine_learning)
 
 find_package(catkin REQUIRED)
 
