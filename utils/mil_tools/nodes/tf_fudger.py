@@ -122,11 +122,12 @@ while not rospy.is_shutdown():
     if k == ord('z'):
         set_bars((0, 0, 0), (0, 0, 0))
 
-    if k == ord('s'):
+    if False and k == ord('s'):
         # Save the transform in navigator_launch/launch/tf.launch replacing the line
+        assert "Sorry, TF fudger not set up to save"
         import rospkg
         rospack = rospkg.RosPack()
-        launch_path = rospack.get_path('navigator_launch')
+        launch_path = rospack.get_path('mil_launch')
         launch_path += "/launch/subsystems/tf.launch"
 
         with open(launch_path, 'r') as f:
