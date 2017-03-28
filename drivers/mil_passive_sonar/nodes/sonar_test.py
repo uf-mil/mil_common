@@ -10,6 +10,9 @@ from multilateration import Multilaterator, ReceiverArraySim, Pulse
 import sys
 
 
+# This should be turned into a unit test
+
+
 if __name__ == '__main__':
     def print_green(str):
         print '\x1b[32m' +  str + '\x1b[0m'
