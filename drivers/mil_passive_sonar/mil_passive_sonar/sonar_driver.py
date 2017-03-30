@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 from __future__ import division
 import numpy as np
 import numpy.linalg as la
@@ -44,7 +44,7 @@ class Sub8Sonar():
     TODO: Express pulse location in map frame
     '''
     def __init__(self, method, c, hydrophone_locations, port, baud=19200):
-        rospy.init_node("sonar")
+        rospy.init_node("passive_sonar")
 
         alarm_broadcaster = AlarmBroadcaster()
         self.disconnection_alarm = alarm_broadcaster.add_alarm(
@@ -62,13 +62,15 @@ class Sub8Sonar():
             self.ser = serial.Serial(port=port, baudrate=baud, timeout=None)
             self.ser.flushInput()        
         except Exception, e:
-            print "\x1b[31mSonar serial  connection error:\n\t", e, "\x1b[0m"
+            print "\x1b[31mSonar serial connection error:\n\t", e, "\x1b[0m"
             return None
 
         self.c = c
         self.hydrophone_locations = []
         for key in hydrophone_locations:
-            sensor_location = np.array([hydrophone_locations[key]['x'], hydrophone_locations[key]['y'], hydrophone_locations[key]['z']])
+            sensor_location = np.array([hydrophone_locations[key]['x'],
+                                        hydrophone_locations[key]['y'],
+                                        hydrophone_locations[key]['z']])
             self.hydrophone_locations += [sensor_location]
         self.multilaterator = Multilaterator(hydrophone_locations, self.c, method) # speed of sound in m/s
         self.est_signal_freq_kHz = 0
@@ -91,7 +93,106 @@ class Sub8Sonar():
                 problem_description="Sonar board serial connection has been terminated."
             )
             return False
-        return self.multilaterator.getPulseLocation(self.timestamp_listener())
+        res = self.multilaterator.getPulseLocation(self.getRawSignal())
+        self.visualize(res) # use pinger finder function instead
+        return res
+
+    def getRawSignal(self):
+        exp_recording_size = 300
+        wave0_raw = np.arange(0, exp_recording_size,1.0)
+        wave1_raw = np.arange(0, exp_recording_size,1.0)
+        wave2_raw = np.arange(0, exp_recording_size,1.0)
+        wave3_raw = np.arange(0., exp_recording_size,1.0)
+        signal_bias = 32767.0
+        fsamp = 1.0275000102750001027500010275e-7
+
+        def Parse_Waves():
+            #incoming data is 3 bytes long
+            i = 0
+            while i < exp_recording_size:
+                buf_num = self.ser.inWaiting()
+                if buf_num >= 5:
+                    value = self.ser.read(5)
+                    if(isinstance(value,int) == 1):
+                        value = 32727
+                    wave0_raw[i]  = float(value) - signal_bias
+                    i += 1
+            i = 0
+            while i < exp_recording_size:
+                buf_num = self.ser.inWaiting()
+                if buf_num >= 5:
+                    value = self.ser.read(5)
+                    if(isinstance(value,int) == 1):
+                        value = 32727
+                    wave1_raw[i] = float(value) - signal_bias
+                    i += 1
+            i = 0
+            while i < exp_recording_size:
+                buf_num = self.ser.inWaiting()
+                if buf_num >= 5:
+                    value = self.ser.read(5)
+                    if(isinstance(value,int) == 1):
+                        value = 32727
+                    wave2_raw[i] = float(value) - signal_bias
+                    i += 1
+            i = 0
+            while i < exp_recording_size:
+                buf_num = self.ser.inWaiting()
+                if buf_num >= 5:
+                    value = self.ser.read(5)
+                    if(isinstance(value,int) == 1):
+                        value = 32727
+                    wave3_raw[i] = float(value) - signal_bias
+                    i += 1
+            i = 0
+
+        #self.ser.write('B')
+        readin = self.ser.read(1)
+        while readin != '\xBB':
+            self.ser.write('B')
+            readin = self.ser.read(1)
+        Parse_Waves()
+        ref_stop = exp_recording_size-1 #58
+        wave0 = wave0_raw[0:ref_stop]
+        wave1 = wave1_raw[0:ref_stop]
+        wave2 = wave2_raw[0:ref_stop]
+        wave3 = wave3_raw[0:ref_stop]
+        #since python doesn't directly set the values as floats
+        #we make sure each value is a float
+        for i in range(0,len(wave0)-1):
+            wave0[i] = float(wave0[i])
+            wave1[i] = float(wave1[i])
+            wave2[i] = float(wave2[i])
+            wave3[i] = float(wave3[i])
+        up_samp_num = 20
+        x = np.linspace(0,len(wave0),len(wave0))
+    #        print "len x = ", len(x)
+    #        print "len wave0 = ", len(wave0)
+        upsamp = np.linspace(0,len(wave0),up_samp_num*len(wave0))
+        wave0 = np.interp(upsamp,x,wave0)
+        wave1 = np.interp(upsamp,x,wave1)
+        wave2 = np.interp(upsamp,x,wave2)
+        wave3 = np.interp(upsamp,x,wave3)
+
+        cc1 = np.correlate(wave1, wave0, mode='full')
+        cc2 = np.correlate(wave2, wave0, mode='full')
+        cc3 = np.correlate(wave3, wave0, mode='full')
+        #********************************************#
+        #Find the Maximums in each correlation
+        cc1_max_index, cc1_max_value = max(enumerate(cc1), key=operator.itemgetter(1))
+        cc2_max_index, cc2_max_value = max(enumerate(cc2), key=operator.itemgetter(1))
+        cc3_max_index, cc3_max_value = max(enumerate(cc3), key=operator.itemgetter(1))
+
+        cc1_max_index = cc1_max_index-(len(cc1)/2)
+        cc2_max_index = cc2_max_index-(len(cc2)/2)
+        cc3_max_index = cc3_max_index-(len(cc3)/2)
+        #Convert to Time
+        dtoa1 = cc1_max_index*fsamp*1000000;    #Units in uS
+        dtoa2 = cc2_max_index*fsamp*1000000;    #Units in uS
+        dtoa3 = cc3_max_index*fsamp*1000000;    #Units in uS
+        rospy.logwarn( "dtoa1: %f, dtoa2: %f, dtoa3: %f" % (dtoa1, dtoa2, dtoa3))
+        return [0,dtoa1,dtoa2,dtoa3]
+
 
     def timestamp_listener(self):
         '''
@@ -301,5 +402,6 @@ def delete_last_lines(n=1):
 
 if __name__ == "__main__":
     d = Sub8Sonar('LS', 1.484, rospy.get_param('~/sonar_driver/hydrophones'),
-                  "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_AH02X4IE-if00-port0",
-                  19200)
+                  "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_A901AN8P-if00-port0",
+                  115200)
+
