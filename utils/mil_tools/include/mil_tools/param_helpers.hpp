@@ -121,5 +121,6 @@ T getParam(ros::NodeHandle &nh, std::string name, T default_value) {
   }
   return res;
 }
-}
+
+} // namespace mil_msgs
 

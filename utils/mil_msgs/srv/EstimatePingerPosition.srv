@@ -1,0 +1,7 @@
+# Request to estimate the position of a pinger using passive sonar
+
+---
+
+# Position of the pinger in the receiver array frame
+std_msgs/Int16  num_heading_observations
+geometry_msgs/Point pinger_postion

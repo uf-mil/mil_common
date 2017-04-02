@@ -1,0 +1,7 @@
+# Request to receive heading to pinger
+
+---
+
+# Heading unit vector in body frame
+Header header
+geometry_msgs/Vector3 heading
