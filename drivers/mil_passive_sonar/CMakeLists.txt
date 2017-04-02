@@ -7,13 +7,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 catkin_python_setup()
 
-catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES sub8_sonar
-#  CATKIN_DEPENDS rospy
-#  DEPENDS system_lib
-)
+catkin_package()
 
-include_directories(
-  ${catkin_INCLUDE_DIRS}
+include_directories(${catkin_INCLUDE_DIRS}
 )

@@ -1,407 +1,315 @@
 #!/usr/bin/env python
 from __future__ import division
-import numpy as np
-import numpy.linalg as la
-from scipy.signal import resample, periodogram
 
-from itertools import product
+import numpy as np
+from sklearn.preprocessing import normalize
 
 import rospy
-import rosparam
-
-from sub8_msgs.srv import Sonar, SonarResponse
-from sub8_ros_tools import thread_lock, make_header
-from sub8_alarm import AlarmBroadcaster
-from multilateration import Multilaterator
+import tf
+from mil_ros_tools import thread_lock
+from multilateration import Multilaterator, ls_line_intersection3d, get_time_delta
 
 import threading
 import serial
-import binascii
-import struct
-import time
-import crc16
-import sys
 
-# temp
-import matplotlib
-matplotlib.use("WX")
-import matplotlib.patches as mpatches
-import matplotlib.pyplot as plt
-fig = plt.figure(0)
-fig2 =plt.figure(1)
-plt.ion()
-plt.show()
+from visualization_msgs.msg import Marker
+from mil_msgs.srv import EstimatePingerPosition, GetPulseHeading, SetPassiveSonarFrequency
+from geometry_msgs.msg import Point, Vector3
+from std_srvs.srv import Empty
 
-lock = threading.Lock()
+__author__ = 'David Soto'
 
+# GLOBALS
+lock = threading.Lock()  # prevent multiple threads simultaneously using a serial port
 
-class Sub8Sonar():
+def receive_signals(serial_port, num_signals, signal_size, scalar_size, signal_bias=0):
     '''
-    Smart sensor that provides high level ROS code with the location of pinger pulses detected with
-    Jake Easterling's Hydrophone board.
+    Receives a set of 1D signals from a serial port and packs them into a numpy array
 
-    TODO: Add a function to try and reconnect to the serial port if we lose connection.
-    TODO: Express pulse location in map frame
+    serial_port - port of type serial.Serial from which to read
+    signal_size - number of sacalar elements in each 1D signal
+    scalar_size - size of each scalar in bytes
+    signal_bias - value to be subtracted from each read scalar before packing into array
+
+    returns: 2D numpy array with <num_signals> rows and <signal_size> columns
     '''
-    def __init__(self, method, c, hydrophone_locations, port, baud=19200):
+    signals = np.full((num_signals, signal_size), signal_bias, dtype=float)
+
+    for channel in range(num_signals):
+        for i in range(signal_size):
+            while serial_port.inWaiting() < scalar_size:
+                pass
+            signals[channel, i] = float(serial_port.read(scalar_size)) - signal_bias
+
+    return signals
+
+class PassiveSonar():
+    '''
+    Smart Passive Sonar driver that communicates with an external data acquisiton board through
+    a serial port.
+
+    This driver can work with an arbitrary receiver arrangement and with as many receivers as your
+    heart desires (with n>=4).
+
+    Multiple solvers are available for solving the multilateration problem, each with their pro's
+    and cons.
+
+    Services:
+      * get_heading_to_pinger
+      * estimate_pinger_location
+
+    An visualization marker will be published to RVIZ for both the heading and the estimated pinger
+    location.
+
+    For more information, read the Passive Sonar wiki page of the mil_common repository.
+    '''
+    def __init__(self):
         rospy.init_node("passive_sonar")
 
-        alarm_broadcaster = AlarmBroadcaster()
-        self.disconnection_alarm = alarm_broadcaster.add_alarm(
-            name='sonar_disconnect',
-            action_required=True,
-            severity=0
-        )
-        self.packet_error_alarm = alarm_broadcaster.add_alarm(
-            name='sonar_packet_error',
-            action_required=False,
-            severity=2
-        )
+        self.load_params()
+        # TODO: update to use ros_alarms
 
         try:
-            self.ser = serial.Serial(port=port, baudrate=baud, timeout=None)
+            self.ser = serial.Serial(port=self.port, baudrate=self.baud, timeout=self.request_timeout)
             self.ser.flushInput()        
         except Exception, e:
             print "\x1b[31mSonar serial connection error:\n\t", e, "\x1b[0m"
             return None
 
-        self.c = c
-        self.hydrophone_locations = []
-        for key in hydrophone_locations:
-            sensor_location = np.array([hydrophone_locations[key]['x'],
-                                        hydrophone_locations[key]['y'],
-                                        hydrophone_locations[key]['z']])
-            self.hydrophone_locations += [sensor_location]
-        self.multilaterator = Multilaterator(hydrophone_locations, self.c, method) # speed of sound in m/s
-        self.est_signal_freq_kHz = 0
-        self._freq_sum = 0
-        self._freq_samples = 0
+        self.reset_position_estimate(None)
 
-        rospy.Service('~/sonar/get_pinger_pulse', Sonar, self.get_pulse_from_raw_data)
-        print "\x1b[32mSub8 sonar driver initialized\x1b[0m"
+        self.tf_listener = tf.TransformListener()
+        self.multilaterator = Multilaterator(self.receiver_locations, self.c, self.method)
+
+        self.rviz_pub = rospy.Publisher("/visualization_marker", Marker, queue_size=10)
+        rospy.Service('passive_sonar/estimate_pinger_position', EstimatePingerPosition, self.estimate_pinger_position)
+        rospy.Service('passive_sonar/get_pulse_heading', GetPulseHeading, self.get_pulse_heading)
+        rospy.Service('passive_sonar/set_frequency', SetPassiveSonarFrequency, self.set_freq)
+        rospy.Service('passive_sonar/reset_postion_estimate', Empty, self.reset_position_estimate)
+        print "\x1b[32mPassive sonar driver initialized\x1b[0m"
         rospy.spin()
 
-    @thread_lock(lock)
-    def get_pulse_from_timestamps(self, srv):
-        self.ser.flushInput()
+    # Passive Sonar Helpers
 
+    def load_params(self):
+        '''
+        Loads all the parameters needed for receiving and processing signals from the passive
+        sonar board and calculating headings towards an active pinger.
+
+        These parameters are descrived in detail in the Passive Sonar page of the mil_common wiki.
+        TODO: copy url here
+        '''
+        def load(prop):
+            param_name = 'passive_sonar_driver/' + prop
+            return rospy.get_param(param_name)
+
+        locs = load('receiver_locations')
+        self.receiver_count = len(locs) + 1
+        self.receiver_locations = np.zeros((self.receiver_count - 1, 3), dtype=float)
+        for i in range(self.receiver_count - 1):
+            self.receiver_locations[i] = np.array([locs[i]['x'], locs[i]['y'], locs[i]['z']])
+
+        self.method = load('method')
+        self.c = load('c')
+        self.port = load('port')
+        self.baud = load('baud')
+	self.TX_REQUEST = load('tx_request_code')
+        self.TX_START = load('tx_start_code')
+        self.request_timeout = load('request_timeout')
+        self.target_freq = load('target_freq')
+        self.scalar_sz = load('scalar_size')
+        self.signal_sz = load('signal_size')
+        self.signal_bias = load('signal_bias')
+        self.samp_freq = load('sampling_freq')
+        self.upsamp = load('upsample_factor')
+        self.locating_frame = load('locating_frame')
+        self.receiver_array_frame = load('receiver_array_frame')
+        self.min_variance = load('min_variance')
+        self.observation_buffer_size = load('observation_buffer_size')
+
+    def getHydrophonePose(self, time):
+        '''
+        Gets the pose of the receiver array frame w.r.t. the <self.locating_frame>
+        (usually /map or /world).
+        
+        Returns a 3x1 translation and a 3x3 rotation matrix (numpy arrays)
+        '''
         try:
-            self.ser.write('A')
-            print "Sent timestamp request..."
-        except:  # Except only serial errors in the future.
-            self.disconnection_alarm.raise_alarm(
-                problem_description="Sonar board serial connection has been terminated."
-            )
-            return False
-        res = self.multilaterator.getPulseLocation(self.getRawSignal())
-        self.visualize(res) # use pinger finder function instead
-        return res
-
-    def getRawSignal(self):
-        exp_recording_size = 300
-        wave0_raw = np.arange(0, exp_recording_size,1.0)
-        wave1_raw = np.arange(0, exp_recording_size,1.0)
-        wave2_raw = np.arange(0, exp_recording_size,1.0)
-        wave3_raw = np.arange(0., exp_recording_size,1.0)
-        signal_bias = 32767.0
-        fsamp = 1.0275000102750001027500010275e-7
-
-        def Parse_Waves():
-            #incoming data is 3 bytes long
-            i = 0
-            while i < exp_recording_size:
-                buf_num = self.ser.inWaiting()
-                if buf_num >= 5:
-                    value = self.ser.read(5)
-                    if(isinstance(value,int) == 1):
-                        value = 32727
-                    wave0_raw[i]  = float(value) - signal_bias
-                    i += 1
-            i = 0
-            while i < exp_recording_size:
-                buf_num = self.ser.inWaiting()
-                if buf_num >= 5:
-                    value = self.ser.read(5)
-                    if(isinstance(value,int) == 1):
-                        value = 32727
-                    wave1_raw[i] = float(value) - signal_bias
-                    i += 1
-            i = 0
-            while i < exp_recording_size:
-                buf_num = self.ser.inWaiting()
-                if buf_num >= 5:
-                    value = self.ser.read(5)
-                    if(isinstance(value,int) == 1):
-                        value = 32727
-                    wave2_raw[i] = float(value) - signal_bias
-                    i += 1
-            i = 0
-            while i < exp_recording_size:
-                buf_num = self.ser.inWaiting()
-                if buf_num >= 5:
-                    value = self.ser.read(5)
-                    if(isinstance(value,int) == 1):
-                        value = 32727
-                    wave3_raw[i] = float(value) - signal_bias
-                    i += 1
-            i = 0
-
-        #self.ser.write('B')
-        readin = self.ser.read(1)
-        while readin != '\xBB':
-            self.ser.write('B')
-            readin = self.ser.read(1)
-        Parse_Waves()
-        ref_stop = exp_recording_size-1 #58
-        wave0 = wave0_raw[0:ref_stop]
-        wave1 = wave1_raw[0:ref_stop]
-        wave2 = wave2_raw[0:ref_stop]
-        wave3 = wave3_raw[0:ref_stop]
-        #since python doesn't directly set the values as floats
-        #we make sure each value is a float
-        for i in range(0,len(wave0)-1):
-            wave0[i] = float(wave0[i])
-            wave1[i] = float(wave1[i])
-            wave2[i] = float(wave2[i])
-            wave3[i] = float(wave3[i])
-        up_samp_num = 20
-        x = np.linspace(0,len(wave0),len(wave0))
-    #        print "len x = ", len(x)
-    #        print "len wave0 = ", len(wave0)
-        upsamp = np.linspace(0,len(wave0),up_samp_num*len(wave0))
-        wave0 = np.interp(upsamp,x,wave0)
-        wave1 = np.interp(upsamp,x,wave1)
-        wave2 = np.interp(upsamp,x,wave2)
-        wave3 = np.interp(upsamp,x,wave3)
-
-        cc1 = np.correlate(wave1, wave0, mode='full')
-        cc2 = np.correlate(wave2, wave0, mode='full')
-        cc3 = np.correlate(wave3, wave0, mode='full')
-        #********************************************#
-        #Find the Maximums in each correlation
-        cc1_max_index, cc1_max_value = max(enumerate(cc1), key=operator.itemgetter(1))
-        cc2_max_index, cc2_max_value = max(enumerate(cc2), key=operator.itemgetter(1))
-        cc3_max_index, cc3_max_value = max(enumerate(cc3), key=operator.itemgetter(1))
-
-        cc1_max_index = cc1_max_index-(len(cc1)/2)
-        cc2_max_index = cc2_max_index-(len(cc2)/2)
-        cc3_max_index = cc3_max_index-(len(cc3)/2)
-        #Convert to Time
-        dtoa1 = cc1_max_index*fsamp*1000000;    #Units in uS
-        dtoa2 = cc2_max_index*fsamp*1000000;    #Units in uS
-        dtoa3 = cc3_max_index*fsamp*1000000;    #Units in uS
-        rospy.logwarn( "dtoa1: %f, dtoa2: %f, dtoa3: %f" % (dtoa1, dtoa2, dtoa3))
-        return [0,dtoa1,dtoa2,dtoa3]
-
-
-    def timestamp_listener(self):
-        '''
-        Parse the response of the board.
-        '''
-        print "Listening..."
-
-        # We've found a packet now disect it.
-        response = self.ser.read(19)
-        # rospy.loginfo("Received: %s" % response) #uncomment for debugging
-        if self.check_CRC(response):
-            delete_last_lines(0) # Heard response!
-            # The checksum matches the data so split the response into each piece of data.
-            # For info on what these letters mean: https://docs.python.org/2/library/struct.html#format-characters
-            data = struct.unpack('>BffffH', response)
-            timestamps = [data[4], data[1], data[2], data[3] ]
-            print "timestamps:", timestamps
-            return timestamps
-        else:
-            self.packet_error_alarm.raise_alarm(
-                problem_description="Sonar board checksum error.",
-                parameters={
-                    'fault_info': {'data': response}
-                }
-            )
-            return None
-
-    @thread_lock(lock)
-    def get_pulse_from_raw_data(self, srv):
-        # request signals from hydrophone board
-        self.ser.flushInput()
-        try:
-            self.ser.write('B')
-            print "Sent raw data request..."
-        except:  # Except only serial errors in the future.
-            self.disconnection_alarm.raise_alarm(
-                problem_description="Sonar board serial connection has been terminated."
-            )
-            return False
-        return self.multilaterator.getPulseLocation(self.raw_data_listener())
-
-    def raw_data_listener(self):
-        '''
-        Parse the response of the board.
-        '''
-        print "Listening..."
-
-        # prepare arrays for storing signals
-        signal_bias = 32767
-        waves_recorded = 3
-        samples_per_wave = 17.24
-        upsample_scale = 3
-        exp_recording_size = np.floor(samples_per_wave) * waves_recorded * upsample_scale - 1
-        raw_signals = np.zeros([4, exp_recording_size], dtype=float)
-
-        try:
-            # read in start bit of packet
-            timeout = 0
-            start_bit = self.ser.read(1)
-            # If start bit not read, keep trying
-            while start_bit != '\xBB':
-                start_bit = self.ser.read(1)
-                timeout += 1
-                if timeout > 600:
-                    raise BufferError("Timeout: failed to read a start bit from sonar board")
-            for elem in np.nditer(raw_signals, op_flags=['readwrite']):
-                elem[...] = float(self.ser.read(5)) - signal_bias  # ... is idx to current elem
-        except BufferError as e:
+            self.tf_listener.waitForTransform(
+                self.locating_frame, self.receiver_array_frame, time, timeout=rospy.Duration(0.25))
+            trans, rot = self.tf_listener.lookupTransform(
+                self.locating_frame, self.receiver_array_frame, ping.header.stamp)
+            rot = tf.transformations.quaternion_matrix(rot)
+            return trans, rot
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
             print e
+            raise RuntimeError("Unable to acquire TF for receiver array")
 
-        non_zero_end_idx = 57
-        up_factor = 8
-        sampling_freq = 430E3 * 0.8 # Hz
-        samp_period = 1E6 / sampling_freq  # microseconds
-        upsamp_step = samp_period / up_factor
-
-        # Set how much of each signal to actually use for processing
-        raw_signals = raw_signals[:, 0:non_zero_end_idx]
-
-        # upsample the signals for successful cross-correlation
-        upsampled_signals = [resample(x, up_factor*len(x)) for x in raw_signals]
-
-        # scale waves so they all have the same variance
-        equalized_signals = [x / np.std(x) for x in upsampled_signals]
-        raw_signals = [x / np.std(x) for x in raw_signals]
-        w0_upsamp, w1_upsamp, w2_upsamp, w3_upsamp = equalized_signals
-        t_up = np.arange(0, non_zero_end_idx*samp_period, upsamp_step)
-
-        zero_crossings = np.where(np.diff(np.sign(w0_upsamp)))[0]
-        num_crossings = len(zero_crossings)
-        if num_crossings % 2 == 0:  # we want an odd number of zero crossings
-            zero_crossings = zero_crossings[1:]
-            num_crossings -= 1
-        waves_between_first_and_last_crossing = (num_crossings - 1) / 2
-        time_between_first_and_last_crossing = t_up[zero_crossings[-1]] - t_up[zero_crossings[0]]
-        curr_signal_freq_kHz = 1E3 * waves_between_first_and_last_crossing / time_between_first_and_last_crossing # kHz
-        self._freq_sum += curr_signal_freq_kHz
-        self._freq_samples += 1
-        self.est_signal_freq_kHz = self._freq_sum / self._freq_samples
-
-
-        # frequencies, spectrum = periodogram(w0_upsamp, sampling_freq * up_factor)
-        # signal_freq = frequencies[np.argmax(spectrum)]  # Hz
-        # print "fft source frequency:", signal_freq, "Hz"
-        print "current source frequency:", curr_signal_freq_kHz, "kHz"
-        print "est source frequency:", self.est_signal_freq_kHz, "kHz"
-        # ax = fig2.add_subplot(111)
-        # ax.semilogy(frequencies,spectrum)
-        # ax.set_ylim([1e-7, 1e2])
-        # ax.set_xlim([0, 6e4])
-        # ax.set_xlabel('frequency [Hz]')
-        signal_period = 1E3 / self.est_signal_freq_kHz  # microseconds
-        upsamples_recorded = len(w0_upsamp)
-
-        waves_ref = 3.5
-        waves_non_ref = 2.5
-        samples_per_wave = signal_period / samp_period
-        ref_upsamples = int(round(waves_ref * samples_per_wave * up_factor))
-        nonref_upsamples = int(np.ceil(waves_non_ref * samples_per_wave * up_factor))
-
-        ref_start_idx = None
-        if (len(w0_upsamp) % 2 == ref_upsamples % 2):
-            ref_start_idx = int(round((upsamples_recorded / 2) - (ref_upsamples / 2)))
-        else:
-            ref_start_idx = int(np.ceil((upsamples_recorded / 2) - (ref_upsamples / 2)))
-        ref_end_idx = ref_start_idx + ref_upsamples - 1
-        nonref_end_idx = ref_start_idx + nonref_upsamples - 1
-
-        w0_select = w0_upsamp[ref_start_idx : ref_end_idx + 1]
-        w1_select = w1_upsamp[ref_start_idx : nonref_end_idx + 1]
-        w2_select = w2_upsamp[ref_start_idx : nonref_end_idx + 1]
-        w3_select = w3_upsamp[ref_start_idx : nonref_end_idx + 1]
-        t_ref_select = t_up[ref_start_idx : ref_end_idx + 1]
-        t_nonref_select = t_up[ref_start_idx : nonref_end_idx + 1]
-
-        cc1 = np.correlate(w0_select, w1_select, mode='full')
-        cc2 = np.correlate(w0_select, w2_select, mode='full')
-        cc3 = np.correlate(w0_select, w3_select, mode='full')
-        corr_start = t_ref_select[0] - t_nonref_select[-1]
-        corr_end = t_ref_select[-1] - t_ref_select[0] + upsamp_step
-        t_corr = np.arange(corr_start, corr_end, upsamp_step)
-        print len(cc1), len(t_corr)
-
-        fig.clf()
-        ax1 = fig.add_subplot(511)
-        ax2 = fig.add_subplot(512)
-        ax3 = fig.add_subplot(513)
-        ax4 = fig.add_subplot(514)
-        ax5 = fig.add_subplot(515)
-        axarr = [ax1, ax2, ax3, ax4, ax5]
-
-        axarr[0].plot(t_up,w1_upsamp,'r',t_up,w2_upsamp,'g',t_up,w3_upsamp,'b',t_up,w0_upsamp,'k')
-        axarr[0].axis([0,60*samp_period,-3,3])
-        axarr[0].set_title('Signals')
-
-        axarr[1].plot(t_nonref_select, w1_select, 'r',
-                      t_nonref_select, w2_select, 'g',
-                      t_nonref_select, w3_select, 'b',
-                      t_ref_select,    w0_select, 'k')
-        axarr[1].set_title('Selected portions')
-
-        axarr[2].plot(t_corr, cc1)
-        axarr[2].set_title('Hydrophone 1 cross-correlation')
-        axarr[3].plot(t_corr, cc2)
-        axarr[3].set_title('Hydrophone 2 cross-correlation')
-        axarr[4].plot(t_corr, cc3)
-        axarr[4].set_title('Hydrophone 3 cross-correlation')
-
-        plt.draw()
-        plt.pause(0.1)
-
-        return [0,0,0,0] #DBG
-
-    def max_delta_t(hydrophone_idx_a, hydrophone_idx_b):
-        a = self.hydrophone_locations[hydrophone_idx_a]
-        b = self.hydrophone_locations[hydrophone_idx_b]
-        dist = la.norm(a - b)
-        return dist / self.c
-
-    def CRC(self, message):
-        # You may have to change the checksum type.
-        # Check the crc16 module online to see how to do that.
-        crc = crc16.crc16xmodem(message, 0xFFFF)
-        return struct.pack('>H', crc)
-
-    def check_CRC(self, message):
+    def get_dtoa(self, signals):
         '''
-        Given a message with a checksum as the last two bytes, this will return True or False
-        if the checksum matches the given message.
+        Returns a list of difference in time of arrival measurements for a signal between
+        each of the non_reference hydrophones and the single reference hydrophone.
+
+        signals - (self.receiver_count x self.signal_sz) numpy array. It is assumed that the
+            first row of this array is the reference signal.
+        
+        returns: list of <self.receiver_count> dtoa measurements in units of microseconds.
         '''
-        msg_checksum = message[-2:]
-        raw_message = message[:-2]
-        crc = crc16.crc16xmodem(raw_message, 0xFFFF)
+        sampling_T = 1.0 / self.samp_freq
+        upsamp_T = sampling_T / self.upsamp
+        t_max = sampling_T * self.signal_sz
 
-        # If the two match the message was correct
-        if crc == struct.unpack('>H', msg_checksum)[0]:
-            return True
-        else:
-            return False
+        t = np.arange(0, t_max, step=sampling_T)
+        t_upsamp = np.arange(0, t_max, step=upsamp_T)
 
-def delete_last_lines(n=1):
-    CURSOR_UP_ONE = '\x1b[1A'
-    ERASE_LINE = '\x1b[2K'
-    for _ in range(n):
-        sys.stdout.write(CURSOR_UP_ONE)
-        sys.stdout.write(ERASE_LINE)
+        signals_upsamp = [np.interp(t_upsamp, t, x) for x in signals]
+
+        dtoa = [get_time_delta(t_upsamp, non_ref, signals[0]) \
+                for non_ref in signals_upsamp[1 : self.receiver_count]]
+
+        return dtoa
+
+    #Passive Sonar Services
+
+    @thread_lock(lock)
+    def get_pulse_heading(self, srv):
+        '''
+        Returns the heading towards an active pinger emmiting at <self.target_freq>.
+        Heading will be a unit vector in hydrophone_array frame
+        '''
+        self.ser.flushInput()
+        try:
+            # Request raw signal tx until start bit is received
+            readin = None
+            timeout_ref = rospy.Time.now()
+            while readin == None or ord(readin) != ord(self.TX_START):
+                self.ser.write(self.TX_REQUEST)
+                readin = self.ser.read(1)
+                if readin == '':  # serial read timed out
+                    return {}
+        except serial.SerialTimeoutException as e:
+            print e
+            return {}
+        except serial.SerialException as e:
+            print  e
+            return {}
+
+        time = rospy.Time.now()
+        signals = receive_signals(self.ser, self.receiver_count, self.signal_sz, 
+                                  self.scalar_sz, self.signal_bias)
+        heading = self.multilaterator.getPulseLocation(self.get_dtoa(signals))
+
+        # Add heaing observation to buffers if the signals are above the variance threshold
+        variance = np.var(signals)
+        if variance > self.min_variance:
+            p0, R = getHydrophonePose(time)
+            R = tf.transformations.quaternion_matrix(R)
+            map_offset = R.dot(heading)
+            p1 = p0 + map_offset
+
+            self.visualize_heading(p0, p1, bgra=[1.0, 0, 0, 0.50], length=2.0)
+
+            self.heading_start = np.append(self.heading_start, p0, axis=0)
+            self.heading_end = np.append(self.heading_end, p1, axis=0)
+            self.observation_variances = np.append(self.observation_variances, variance)
+
+            # delete softest samples if we have over max_observations
+            if len(self.line_array) >= self.observation_buffer_size:
+                softest_idx = np.argmin(self.observation_variances)
+                self.heading_start = np.delete(self.line_array, softest_idx, axis=0)
+                self.heading_end = np.delete(self.line_array, softest_idx, axis=0)
+                self.observation_variances = np.delete(self.observation_variances, softest_idx, axis=0)
+
+        header = make_header(frame=self.locating_frame)
+        heading = {'x' : heading[0], 'y' : heading[1],  'z' : heading[2]}
+        return {'header' : header, 'heading' : heading}
+
+    def estimate_pinger_position(self, req):
+        '''
+        Uses a buffer of prior observations to estimate the position of the pinger as the intersection
+        of a set of 3d lines in the least-squares sense.
+        '''
+        assert len(self.heading_start) > 1
+        self.pinger_postion = ls_line_intersection3d(self.heading_start, self.heading_end)
+        self.visualize_pinger_pos_estimate()
+        pinger_position = numpy_to_point(self.pinger_position)
+        return {'pinger_position' : pinger_position, 'num_samples' : len(self.heading_start)}
+
+    def set_freq(self, req):
+        '''
+        Sets the assumed frequency (in absence of noise) of the signals to received by the driver
+        '''
+        self.target_freq = req.frequency
+        self.heading_start = np.empty((0, 3), float)
+        self.heading_end = np.empty((0, 3), float)
+        self.sample_variances = np.empty((0, 1), float)
+        self.pinger_position = np.array([np.NaN, np.NaN, np.NaN])
+        return {}
+
+    def reset_position_estimate(self, req):
+        '''
+        Clears all the heading and amplitude buffers and makes the position estimate NaN
+        '''
+	self.heading_start = np.empty((0, 3), float)
+	self.heading_end = np.empty((0, 3), float)
+        self.observation_variances = np.empty((0, 0), float)
+        self.pinger_position = np.array([np.NaN, np.NaN, np.NaN])
+        return {}
+
+    # Passive Sonar RVIZ visualization
+    def visualize_pinger_pos_estimate(self, bgra):
+        '''
+        Publishes a marker to RVIZ representing the last calculated estimate of the position of
+        the pinger.
+
+        rgba - list of 3 or 4 floats in the interval [0.0, 1.0] representing the desired color and
+            transparency of the marker
+        '''
+        marker = Marker()
+        marker.ns = "passive_sonar-{}".format(self.target_freq)
+        marker.header.stamp = rospy.Time(0)
+        marker.header.frame_id = self.locating_frame
+        marker.type = marker.SPHERE
+        marker.action = marker.ADD
+        marker.scale.x = 0.2
+        np.clip(bgra, 0.0, 1.0)
+        marker.color.b = bgra[0]
+        marker.color.g = bgra[1]
+        marker.color.r = bgra[2]
+        marker.color.a = 1.0 if len(bgra) < 4 else bgra[3]
+        marker.pose.position = numpy_to_point(self.pinger_est_position)
+        self.rviz_pub.publish(marker)
+        print "position: ({p.x[0]:.2f}, {p.y[0]:.2f})".format(p=self.pinger_position)
+
+    def visualize_heading(self, tail, head, bgra, length=None):
+        '''
+        Publishes an arrow marker to RVIZ representing the heading towards the last heard ping.
+
+        tail - 3x1 numpy array
+        head - 3x1 numpy array
+        lenth - scalar (float, int) desired length of the arrow marker. If None, length will
+            be unchanged.
+        '''
+        if size is not None:
+          head = tail + (head - tail) / np.linalg.norm(head-tail) * size
+        head = Point(head[0], head[1], head[2])
+        tail = Point(tail[0], tail[1], tail[2])
+        marker = Marker()
+        marker.ns = "passive_sonar-{}/heading".format(self.target_freq)
+        marker.header.stamp = rospy.Time(0)
+        marker.header.frame_id = self.map_frame
+        marker.type = marker.ARROW
+        marker.action = marker.ADD
+        marker.points.append(tail)
+        marker.points.append(head)
+        marker.color.b = bgra[0]
+        marker.color.g = bgra[1]
+        marker.color.r = bgra[2]
+        marker.color.a = 1.0 if len(bgra) < 4 else bgra[3]
+        marker.scale.x = 0.1
+        marker.scale.y = 0.2
+        self.rviz_pub.publish(marker)
 
 if __name__ == "__main__":
-    d = Sub8Sonar('LS', 1.484, rospy.get_param('~/sonar_driver/hydrophones'),
-                  "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_A901AN8P-if00-port0",
-                  115200)
+    ping_ping_motherfucker = PassiveSonar()
 
