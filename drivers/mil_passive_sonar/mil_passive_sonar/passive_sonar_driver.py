@@ -6,7 +6,7 @@ from sklearn.preprocessing import normalize
 
 import rospy
 import tf
-from mil_ros_tools import thread_lock
+from mil_ros_tools import thread_lock, make_header
 from multilateration import Multilaterator, ls_line_intersection3d, get_time_delta
 
 import threading
@@ -15,7 +15,10 @@ import serial
 from visualization_msgs.msg import Marker
 from mil_msgs.srv import EstimatePingerPosition, GetPulseHeading, SetPassiveSonarFrequency
 from geometry_msgs.msg import Point, Vector3
+from std_msgs.msg import Bool
 from std_srvs.srv import Empty
+
+import matplotlib.pyplot as plt
 
 __author__ = 'David Soto'
 
@@ -41,6 +44,7 @@ def receive_signals(serial_port, num_signals, signal_size, scalar_size, signal_b
                 pass
             signals[channel, i] = float(serial_port.read(scalar_size)) - signal_bias
 
+    np.savetxt("/home/sub8/passive_sonar_signals.txt", signals, delimiter=',')
     return signals
 
 class PassiveSonar():
@@ -138,9 +142,9 @@ class PassiveSonar():
             self.tf_listener.waitForTransform(
                 self.locating_frame, self.receiver_array_frame, time, timeout=rospy.Duration(0.25))
             trans, rot = self.tf_listener.lookupTransform(
-                self.locating_frame, self.receiver_array_frame, ping.header.stamp)
+                self.locating_frame, self.receiver_array_frame, time)
             rot = tf.transformations.quaternion_matrix(rot)
-            return trans, rot
+            return trans, rot[:3,:3]
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
             print e
             raise RuntimeError("Unable to acquire TF for receiver array")
@@ -155,6 +159,8 @@ class PassiveSonar():
         
         returns: list of <self.receiver_count> dtoa measurements in units of microseconds.
         '''
+        plt.plot(signals.T)
+        plt.show()
         sampling_T = 1.0 / self.samp_freq
         upsamp_T = sampling_T / self.upsamp
         t_max = sampling_T * self.signal_sz
@@ -167,6 +173,7 @@ class PassiveSonar():
         dtoa = [get_time_delta(t_upsamp, non_ref, signals[0]) \
                 for non_ref in signals_upsamp[1 : self.receiver_count]]
 
+        print "dtoa: {}".format(np.array(dtoa)*1E6)
         return dtoa
 
     #Passive Sonar Services
@@ -177,7 +184,13 @@ class PassiveSonar():
         Returns the heading towards an active pinger emmiting at <self.target_freq>.
         Heading will be a unit vector in hydrophone_array frame
         '''
+        def make_response(header, v, success, err=''):
+            if v is None:
+               return make_response(header, np.full(3, np.NaN), success)
+            return {'header' : header, 'x' : v[0], 'y' : v[1], 'z' : v[2], 'success' : success}
+
         self.ser.flushInput()
+        header = make_header(frame=self.locating_frame)
         try:
             # Request raw signal tx until start bit is received
             readin = None
@@ -185,14 +198,17 @@ class PassiveSonar():
             while readin == None or ord(readin) != ord(self.TX_START):
                 self.ser.write(self.TX_REQUEST)
                 readin = self.ser.read(1)
+                print "a"
                 if readin == '':  # serial read timed out
-                    return {}
+                    return make_response(header, None, False, 'Timed out waiting for serial response.')
         except serial.SerialTimeoutException as e:
             print e
-            return {}
+            print "b"
+            return make_response(header, None, False, e.what())
         except serial.SerialException as e:
             print  e
-            return {}
+            print "c"
+            return make_response(header, None, False, e.what())
 
         time = rospy.Time.now()
         signals = receive_signals(self.ser, self.receiver_count, self.signal_sz, 
@@ -202,27 +218,26 @@ class PassiveSonar():
         # Add heaing observation to buffers if the signals are above the variance threshold
         variance = np.var(signals)
         if variance > self.min_variance:
-            p0, R = getHydrophonePose(time)
-            R = tf.transformations.quaternion_matrix(R)
+            p0, R = self.getHydrophonePose(time)
             map_offset = R.dot(heading)
             p1 = p0 + map_offset
 
-            self.visualize_heading(p0, p1, bgra=[1.0, 0, 0, 0.50], length=2.0)
+            self.visualize_heading(p0, p1, bgra=[1.0, 0, 0, 0.50], length=4.0)
 
-            self.heading_start = np.append(self.heading_start, p0, axis=0)
-            self.heading_end = np.append(self.heading_end, p1, axis=0)
+            self.heading_start = np.append(self.heading_start, np.array([p0]), axis=0)
+            self.heading_end = np.append(self.heading_end, np.array([p1]), axis=0)
             self.observation_variances = np.append(self.observation_variances, variance)
 
             # delete softest samples if we have over max_observations
-            if len(self.line_array) >= self.observation_buffer_size:
+            if len(self.heading_start) >= self.observation_buffer_size:
                 softest_idx = np.argmin(self.observation_variances)
                 self.heading_start = np.delete(self.line_array, softest_idx, axis=0)
                 self.heading_end = np.delete(self.line_array, softest_idx, axis=0)
                 self.observation_variances = np.delete(self.observation_variances, softest_idx, axis=0)
 
-        header = make_header(frame=self.locating_frame)
-        heading = {'x' : heading[0], 'y' : heading[1],  'z' : heading[2]}
-        return {'header' : header, 'heading' : heading}
+        H = Vector3(*heading)
+        print "heading: {}".format(heading)
+        return make_response(header, heading, False)
 
     def estimate_pinger_position(self, req):
         '''
@@ -265,6 +280,7 @@ class PassiveSonar():
         rgba - list of 3 or 4 floats in the interval [0.0, 1.0] representing the desired color and
             transparency of the marker
         '''
+        print "Visualizing Position"
         marker = Marker()
         marker.ns = "passive_sonar-{}".format(self.target_freq)
         marker.header.stamp = rospy.Time(0)
@@ -290,14 +306,14 @@ class PassiveSonar():
         lenth - scalar (float, int) desired length of the arrow marker. If None, length will
             be unchanged.
         '''
-        if size is not None:
-          head = tail + (head - tail) / np.linalg.norm(head-tail) * size
+        if length is not None:
+          head = tail + (head - tail) / np.linalg.norm(head-tail) * length
         head = Point(head[0], head[1], head[2])
         tail = Point(tail[0], tail[1], tail[2])
         marker = Marker()
         marker.ns = "passive_sonar-{}/heading".format(self.target_freq)
         marker.header.stamp = rospy.Time(0)
-        marker.header.frame_id = self.map_frame
+        marker.header.frame_id = self.locating_frame
         marker.type = marker.ARROW
         marker.action = marker.ADD
         marker.points.append(tail)

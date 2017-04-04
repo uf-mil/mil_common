@@ -15,7 +15,7 @@
         - x :     0
           y : -25.4
           z :     0
-      port : "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_A603IYBQ-if00-port0"
+      port : "/dev/serial/by-id/usb-MIL_Data_Merge_Board_Ports_5_to_8_DMBP58-if01-port0"
       baud : 115200
       tx_request_code : 'B'
       tx_start_code : "\xBB"
