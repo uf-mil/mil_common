@@ -1,0 +1,7 @@
+# Empty Request to save the bag being recorded
+
+---
+# Response
+bool success
+string filename
+string err_str

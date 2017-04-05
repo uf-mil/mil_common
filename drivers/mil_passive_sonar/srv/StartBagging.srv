@@ -1,0 +1,7 @@
+# Request to start bagging signals to a file (don't include an extension)
+string filename
+
+---
+# Response
+bool success
+string err_str
