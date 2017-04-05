@@ -1,36 +1,36 @@
 <launch>
-  <node pkg="mil_passive_sonar" type="passive_sonar_driver.py" name="passive_sonar_driver"
-        output="screen">
-    <!-- units in millimeters, microseconds -->
-    <rosparam>
-      method : "LS"
-      c : 1.484
-      receiver_locations: <!-- SubjuGator 8 (2017) configuration -->
-        - x : -25.4
-          y :     0
-          z :  25.4
-        - x :  25.4
-          y :     0
-          z :     0
-        - x :     0
-          y : -25.4
-          z :     0
-      port : "/dev/serial/by-id/usb-MIL_Data_Merge_Board_Ports_5_to_8_DMBP58-if01-port0"
-      baud : 115200
-      tx_request_code : 'B'
-      tx_start_code : "\xBB"
-      request_timeout : 1.0
-      target_freq : 35000
-      scalar_size : 5
-      signal_size : 300
-      signal_bias : 32767.0
-      sampling_freq : 486618
-      upsample_factor : 20
-      locating_frame : "/map"
-      receiver_array_frame : "/hydrophones"
-      min_variance : 200
-      observation_buffer_size : 200
-    </rosparam>
-  </node>
+<!-- units in millimeters, microseconds -->
+  <rosparam ns="passive_sonar">
+    method : "LS"
+    c : 1.484
+    receiver_locations: <!-- SubjuGator 8 (2017) configuration -->
+      - x : -25.4
+        y :     0
+        z :  25.4
+      - x :  25.4
+        y :     0
+        z :     0
+      - x :     0
+        y : -25.4
+        z :     0
+
+    port : "/dev/serial/by-id/usb-MIL_Data_Merge_Board_Ports_5_to_8_DMBP58-if01-port0"
+    baud : 115200
+    tx_request_code : 'B'
+    tx_start_code : "\xBB"
+    read_timeout : 1.0
+    target_freq : 35000
+    scalar_size : 5
+    signal_size : 300
+    signal_bias : 32767.0
+    sampling_freq : 486618
+
+    upsampling_factor : 20
+    locating_frame : "/map"
+    receiver_array_frame : "/hydrophones"
+    min_variance : 200
+    observation_buffer_size : 200
+  </rosparam>
+  <node pkg="mil_passive_sonar" type="passive_sonar_driver.py" name="passive_sonar" output="screen"/>
 </launch>
 

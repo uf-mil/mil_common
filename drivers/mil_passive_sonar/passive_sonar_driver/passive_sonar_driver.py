@@ -13,7 +13,7 @@ import threading
 import serial
 
 from visualization_msgs.msg import Marker
-from mil_msgs.srv import EstimatePingerPosition, GetPulseHeading, SetPassiveSonarFrequency
+from mil_passive_sonar.srv import *
 from geometry_msgs.msg import Point, Vector3
 from std_msgs.msg import Bool
 from std_srvs.srv import Empty
@@ -24,6 +24,29 @@ __author__ = 'David Soto'
 
 # GLOBALS
 lock = threading.Lock()  # prevent multiple threads simultaneously using a serial port
+
+def request_signals(serial_port, data_request_code, tx_start_code):
+    '''
+    Request a set of digital signals from a serial port
+
+    serial_port - open instance of serial.Serial
+    data_request_code - char or string to sent to receiver board to signal a data request
+    tx_start_code - char or string that the receiver board will send  us to signal the
+        start of a transmission
+    '''
+    serial_port.flushInput()
+    try:
+        readin = None
+
+        # Request raw signal tx until start bit is received
+        while readin == None or ord(readin) != ord(tx_start_code):
+            serial_port.write(data_request_code)
+            readin = serial_port.read(1)
+            if size(readin) < size(data_request_code):  # serial read timed out
+                raise IOError('Timed out waiting for serial response.')
+
+    except serial.SerialException as e:
+        raise IOError(str(e))
 
 def receive_signals(serial_port, num_signals, signal_size, scalar_size, signal_bias=0):
     '''
@@ -44,13 +67,20 @@ def receive_signals(serial_port, num_signals, signal_size, scalar_size, signal_b
                 pass
             signals[channel, i] = float(serial_port.read(scalar_size)) - signal_bias
 
-    np.savetxt("/home/sub8/passive_sonar_signals.txt", signals, delimiter=',')
     return signals
 
-class PassiveSonar():
+class PassiveSonar(object):
     '''
-    Smart Passive Sonar driver that communicates with an external data acquisiton board through
-    a serial port.
+    Passive Sonar Driver: listens for a pinger and uses multilateration to locate it in a
+        specified TF frame.
+
+    Args:
+    * input_mode - one of the following strings: ['serial', 'bag', 'signal_cb']
+        'serial'    - get signal input with a data acquistion board via a serial port
+        'bag'       - get signal input from a .npz file saved to disk
+        'signal_cb' - get signal input from user provided function
+        For more information on how to use each of these modes, read the wiki page.
+    * signal_callback - Optional function used as a source of input if in 'signal_cb' mode
 
     This driver can work with an arbitrary receiver arrangement and with as many receivers as your
     heart desires (with n>=4).
@@ -59,22 +89,33 @@ class PassiveSonar():
     and cons.
 
     Services:
-      * get_heading_to_pinger
+      * get_pulse_heading:
+          Requests signals from the input source and calculates the relative heading to the pulse
       * estimate_pinger_location
+          Estimates the position of a stationary pinger as the least_squares intersection of a set
+          of 3D lines in a set TF frame.
+      * set_frequency
+          Set's the frequncy of the pinger that is being listened to.
+      * reset_frequency_estimate
+          Flushes all of the saved heading observations, and set's the postion estimate to NaN
+      * start_bagging
+          Starts recording all of the received signals to an internal buffer.
+      * save_bag
+          Dumps the buffer of recorded signals to a file.
 
     An visualization marker will be published to RVIZ for both the heading and the estimated pinger
     location.
 
     For more information, read the Passive Sonar wiki page of the mil_common repository.
     '''
-    def __init__(self):
-        rospy.init_node("passive_sonar")
+    def __init__(self, input_mode='serial', signal_callback=None):
 
+        self.input_mode = input_mode
         self.load_params()
         # TODO: update to use ros_alarms
 
         try:
-            self.ser = serial.Serial(port=self.port, baudrate=self.baud, timeout=self.request_timeout)
+            self.ser = serial.Serial(port=self.port, baudrate=self.baud, timeout=self.read_timeout)
             self.ser.flushInput()        
         except Exception, e:
             print "\x1b[31mSonar serial connection error:\n\t", e, "\x1b[0m"
@@ -86,10 +127,7 @@ class PassiveSonar():
         self.multilaterator = Multilaterator(self.receiver_locations, self.c, self.method)
 
         self.rviz_pub = rospy.Publisher("/visualization_marker", Marker, queue_size=10)
-        rospy.Service('passive_sonar/estimate_pinger_position', EstimatePingerPosition, self.estimate_pinger_position)
-        rospy.Service('passive_sonar/get_pulse_heading', GetPulseHeading, self.get_pulse_heading)
-        rospy.Service('passive_sonar/set_frequency', SetPassiveSonarFrequency, self.set_freq)
-        rospy.Service('passive_sonar/reset_postion_estimate', Empty, self.reset_position_estimate)
+        self.declare_services()
         print "\x1b[32mPassive sonar driver initialized\x1b[0m"
         rospy.spin()
 
@@ -103,33 +141,45 @@ class PassiveSonar():
         These parameters are descrived in detail in the Passive Sonar page of the mil_common wiki.
         TODO: copy url here
         '''
-        def load(prop):
-            param_name = 'passive_sonar_driver/' + prop
-            return rospy.get_param(param_name)
+        # ROS params expected to be loaded under namespace passive_sonar
+        required = ['receiver_locations', 'method', 'c', 'sampling_freq', 'upsampling_factor',
+                    'locating_frame', 'receiver_array_frame', 'min_variance', 'observation_buffer_size']
+        serial = ['port', 'baud', 'tx_request_code', 'tx_start_code', 'read_timeout', 'scalar_size', 
+                  'signal_bias']
+        bag = ['bag_filename']
 
-        locs = load('receiver_locations')
-        self.receiver_count = len(locs) + 1
-        self.receiver_locations = np.zeros((self.receiver_count - 1, 3), dtype=float)
-        for i in range(self.receiver_count - 1):
-            self.receiver_locations[i] = np.array([locs[i]['x'], locs[i]['y'], locs[i]['z']])
+        load = lambda prop: setattr(self, prop, rospy.get_param('passive_sonar/' + prop))
+        try:
+            [load(x) for x in required]
+            if self.input_mode == 'serial':
+                [load(x) for x in serial]
+            if self.input_mode == 'bag':
+                [load(x) for x in bag]
+        except KeyError as e:
+            raise IOError('A required rosparam was not declared: ' + str(e))
 
-        self.method = load('method')
-        self.c = load('c')
-        self.port = load('port')
-        self.baud = load('baud')
-	self.TX_REQUEST = load('tx_request_code')
-        self.TX_START = load('tx_start_code')
-        self.request_timeout = load('request_timeout')
-        self.target_freq = load('target_freq')
-        self.scalar_sz = load('scalar_size')
-        self.signal_sz = load('signal_size')
-        self.signal_bias = load('signal_bias')
-        self.samp_freq = load('sampling_freq')
-        self.upsamp = load('upsample_factor')
-        self.locating_frame = load('locating_frame')
-        self.receiver_array_frame = load('receiver_array_frame')
-        self.min_variance = load('min_variance')
-        self.observation_buffer_size = load('observation_buffer_size')
+        self.receiver_count = len(self.receiver_locations) + 1
+        self.receiver_locations = np.array(  # dictionary to numpy array
+            [np.array([x['x'], x['y'], x['z']]) for x in self.receiver_locations])
+
+    def declare_services(self):
+       '''
+       Conveniently declares all the services offered by the driver
+       '''
+       services = {
+                      'get_pulse_heading'        : GetPulseHeading,
+                      'estimate_pinger_position' : EstimatePingerPosition,
+                      'reset_position_estimate'  : ResetPositionEstimate,
+                      'start_bagging'            : StartBagging,
+                      'save_bag'                 : SaveBag,
+                      'set_frequency'            : SetFrequency
+                  }
+       [rospy.Service('passive_sonar/' + s[0], s[1], getattr(self, s[0])) for s in services.items()]
+
+    def make_response(header, v, success, err=''):
+        if v is None:
+           return make_response(header, np.full(3, np.NaN), success)
+        return {'header' : header, 'x' : v[0], 'y' : v[1], 'z' : v[2], 'success' : success}
 
     def getHydrophonePose(self, time):
         '''
@@ -184,31 +234,9 @@ class PassiveSonar():
         Returns the heading towards an active pinger emmiting at <self.target_freq>.
         Heading will be a unit vector in hydrophone_array frame
         '''
-        def make_response(header, v, success, err=''):
-            if v is None:
-               return make_response(header, np.full(3, np.NaN), success)
-            return {'header' : header, 'x' : v[0], 'y' : v[1], 'z' : v[2], 'success' : success}
 
         self.ser.flushInput()
-        header = make_header(frame=self.locating_frame)
-        try:
-            # Request raw signal tx until start bit is received
-            readin = None
-            timeout_ref = rospy.Time.now()
-            while readin == None or ord(readin) != ord(self.TX_START):
-                self.ser.write(self.TX_REQUEST)
-                readin = self.ser.read(1)
-                print "a"
-                if readin == '':  # serial read timed out
-                    return make_response(header, None, False, 'Timed out waiting for serial response.')
-        except serial.SerialTimeoutException as e:
-            print e
-            print "b"
-            return make_response(header, None, False, e.what())
-        except serial.SerialException as e:
-            print  e
-            print "c"
-            return make_response(header, None, False, e.what())
+        header = self.make_header(frame=self.locating_frame)
 
         time = rospy.Time.now()
         signals = receive_signals(self.ser, self.receiver_count, self.signal_sz, 
@@ -237,7 +265,7 @@ class PassiveSonar():
 
         H = Vector3(*heading)
         print "heading: {}".format(heading)
-        return make_response(header, heading, False)
+        return self.make_response(header, heading, False)
 
     def estimate_pinger_position(self, req):
         '''
@@ -245,21 +273,12 @@ class PassiveSonar():
         of a set of 3d lines in the least-squares sense.
         '''
         assert len(self.heading_start) > 1
-        self.pinger_postion = ls_line_intersection3d(self.heading_start, self.heading_end)
+        p = ls_line_intersection3d(self.heading_start, self.heading_end)
+        p = self.pinger_postion
         self.visualize_pinger_pos_estimate()
-        pinger_position = numpy_to_point(self.pinger_position)
-        return {'pinger_position' : pinger_position, 'num_samples' : len(self.heading_start)}
-
-    def set_freq(self, req):
-        '''
-        Sets the assumed frequency (in absence of noise) of the signals to received by the driver
-        '''
-        self.target_freq = req.frequency
-        self.heading_start = np.empty((0, 3), float)
-        self.heading_end = np.empty((0, 3), float)
-        self.sample_variances = np.empty((0, 1), float)
-        self.pinger_position = np.array([np.NaN, np.NaN, np.NaN])
-        return {}
+        return {'header' : make_header(frame=self.locating_frame),
+                'num_headings' : len(self.heading_start),
+                'x' : p[0], 'y' : p[1], 'z' : p[2]}
 
     def reset_position_estimate(self, req):
         '''
@@ -268,6 +287,23 @@ class PassiveSonar():
 	self.heading_start = np.empty((0, 3), float)
 	self.heading_end = np.empty((0, 3), float)
         self.observation_variances = np.empty((0, 0), float)
+        self.pinger_position = np.array([np.NaN, np.NaN, np.NaN])
+        return {}
+
+    def start_bagging(self, req):
+        pass
+
+    def save_bag(self, req):
+        pass
+
+    def set_frequency(self, req):
+        '''
+        Sets the assumed frequency (in absence of noise) of the signals to received by the driver
+        '''
+        self.target_freq = req.frequency
+        self.heading_start = np.empty((0, 3), float)
+        self.heading_end = np.empty((0, 3), float)
+        self.sample_variances = np.empty((0, 1), float)
         self.pinger_position = np.array([np.NaN, np.NaN, np.NaN])
         return {}
 
@@ -327,5 +363,6 @@ class PassiveSonar():
         self.rviz_pub.publish(marker)
 
 if __name__ == "__main__":
+    rospy.init_node("passive_sonar_driver")
     ping_ping_motherfucker = PassiveSonar()
 
