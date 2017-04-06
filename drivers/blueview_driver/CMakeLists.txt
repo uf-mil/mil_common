@@ -10,8 +10,12 @@ find_package(catkin REQUIRED COMPONENTS
   bvtsdkpkg
   std_msgs
   message_generation
+  tf
+  pcl_conversions
+  pcl_ros
 )
 find_package(OpenCV REQUIRED)
+find_package(PCL REQUIRED)
 
 add_message_files(
   FILES
@@ -35,7 +39,7 @@ catkin_package(
 	message_runtime
 )
 
-include_directories(include ${bvtsdkpkg_INCLUDE_DIRS} ${roslib_INCLUDE_DIRS})
+include_directories(include ${bvtsdkpkg_INCLUDE_DIRS} ${roslib_INCLUDE_DIRS}  ${PCL_INCLUDE_DIRS})
 
 add_library(blueview_tools
 			src/BVWrapper.cpp)
@@ -51,11 +55,23 @@ add_dependencies(blueview_driver blueview_tools)
 add_dependencies(blueview_driver blueview_driver_generate_messages ${catkin_EXPORTED_TARGETS})
 target_link_libraries(blueview_driver blueview_tools ${catkin_LIBRARIES})
 
+link_directories(${PCL_LIBRARY_DIRS})
+add_definitions(${PCL_DEFINITIONS})
+
+add_executable(ogrid_generator src/OGridGen.cpp)
+add_dependencies(
+  ogrid_generator
+   blueview_driver_generate_messages
+   ${catkin_EXPORTED_TARGETS}
+)
+target_link_libraries(ogrid_generator blueview_tools ${catkin_LIBRARIES})
+
+
 if (CATKIN_ENABLE_TESTING)
   find_package(rostest REQUIRED)
   add_rostest_gtest(blueview_driver_test
     test/blueview_driver.test
     test/blueview_driver_test.cpp
   )
-  target_link_libraries(blueview_driver_test ${catkin_LIBRARIES})
+  target_link_libraries(blueview_driver_test ${catkin_LIBRARIES} ${PCL_LIBRARIES})
 endif()
