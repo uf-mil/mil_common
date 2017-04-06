@@ -6,7 +6,6 @@ from sklearn.preprocessing import normalize
 
 import rospy
 import tf
-from mil_ros_tools import thread_lock, make_header
 from multilateration import Multilaterator, ls_line_intersection3d, get_time_delta
 
 import threading
@@ -14,9 +13,6 @@ import serial
 
 from visualization_msgs.msg import Marker
 from mil_passive_sonar.srv import *
-from geometry_msgs.msg import Point, Vector3
-from std_msgs.msg import Bool
-from std_srvs.srv import Empty
 
 import matplotlib.pyplot as plt
 
@@ -25,50 +21,140 @@ __author__ = 'David Soto'
 # GLOBALS
 lock = threading.Lock()  # prevent multiple threads simultaneously using a serial port
 
-def request_signals(serial_port, data_request_code, tx_start_code):
+def thread_lock(lock):  # decorator
     '''
-    Request a set of digital signals from a serial port
+    Use an existing thread lock prevent a function from being executed by multiple threads at once
+    '''
+    def lock_thread(function_to_lock):
+        def locked_function(*args, **kwargs):
+            with lock:
+                result = function_to_lock(*args, **kwargs)
+        return locked_function
+    return lock_thread
 
-    serial_port - open instance of serial.Serial
-    data_request_code - char or string to sent to receiver board to signal a data request
-    tx_start_code - char or string that the receiver board will send  us to signal the
-        start of a transmission
+def getReceiverPose(time, receiver_array_frame, locating_frame):
     '''
-    serial_port.flushInput()
+    Gets the pose of the receiver array frame w.r.t. the locating_frame
+    (usually /map or /world).
+    
+    Returns a 3x1 translation and a 3x3 rotation matrix (numpy arrays)
+    '''
     try:
-        readin = None
+        tfl = tf.TransformListener()
+        tfl.waitForTransform(locating_frame, receiver_array_frame, time, timeout=rospy.Duration(0.20))
+        trans, rot = tfl.lookupTransform(locating_frame, receiver_array_frame, time)
+        rot = tf.transformations.quaternion_matrix(rot)
+        return trans, rot[:3,:3]
+    except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
+        rospy.err(str(e))
+        return None
 
-        # Request raw signal tx until start bit is received
-        while readin == None or ord(readin) != ord(tx_start_code):
-            serial_port.write(data_request_code)
-            readin = serial_port.read(1)
-            if size(readin) < size(data_request_code):  # serial read timed out
-                raise IOError('Timed out waiting for serial response.')
+def PassiveSonarInputSource(object):
+    ready = False
+    def input_request(self, callback):
+        '''
+        The driver will call this function to request signal and tf data.
+        Inheriting classes should override this method and do the following:
+        1) assign signals to self.signals
+        2) assign tf to self.tf
+        3) assign True to self.ready
+        '''
+        pass
 
-    except serial.SerialException as e:
-        raise IOError(str(e))
+    def get_signals(self):
+        '''
+        Returns a numpy array with a row for each receiver, and a column for each element of
+        the recorded signal. The first row is reserved for the reference signal. The remaining
+        rows should be in the same order as define in rosparam /passive_sonar/receiver_locations.
 
-def receive_signals(serial_port, num_signals, signal_size, scalar_size, signal_bias=0):
-    '''
-    Receives a set of 1D signals from a serial port and packs them into a numpy array
+        This method should not be overriden.
+        '''
+        return self.signals
 
-    serial_port - port of type serial.Serial from which to read
-    signal_size - number of sacalar elements in each 1D signal
-    scalar_size - size of each scalar in bytes
-    signal_bias - value to be subtracted from each read scalar before packing into array
+    def get_tf(self, ref_frame):
+        '''
+        Returns a tuple. The first element should be a 3 element 1D numpy array representing
+        the position of the receiver array in <ref_frame>. The second element should be a
+        3x3 rotation matrix (numpy array) representing the orientation of the receiver array
+        in <ref_frame>.
 
-    returns: 2D numpy array with <num_signals> rows and <signal_size> columns
-    '''
-    signals = np.full((num_signals, signal_size), signal_bias, dtype=float)
+        This method should not be overriden.
+        '''
+        return self.tf
 
-    for channel in range(num_signals):
-        for i in range(signal_size):
-            while serial_port.inWaiting() < scalar_size:
-                pass
-            signals[channel, i] = float(serial_port.read(scalar_size)) - signal_bias
+    def reset(self):
+        '''
+        Driver will reset state when signals are received, could be used as feedback that signals
+        were received.
+        '''
+        self.ready = False
 
-    return signals
 
+class _SerialInput(PassiveSonarInputSource):
+    def __init__(self, param_names, num_receivers):
+        self.num_receivers = num_receivers
+        load = lambda prop: setattr(self, prop, rospy.get_param('passive_sonar/' + prop))
+        [load(x) for x in param_names]
+
+        try:
+            self.ser = serial.Serial(port=self.port, baudrate=self.baud, timeout=self.read_timeout)
+            self.ser.flushInput()
+        except serial.SerialException, e:
+            rospy.err("Sonar serial connection error: " + str(e))
+            raise e
+
+    def input_request(self):
+        try:
+            request_signals()
+            self.signals = receive_signals()
+            self.tf = getReceiverPose()
+            self.ready = True
+         except Exception as e:
+            rospy.logerr(str(e))
+ 
+    def request_signals(self):
+        '''
+        Request a set of digital signals from a serial port
+
+        serial_port - open instance of serial.Serial
+        data_request_code - char or string to sent to receiver board to signal a data request
+        tx_start_code - char or string that the receiver board will send  us to signal the
+            start of a transmission
+        '''
+        self.ser.flushInput()
+        try:
+            readin = None
+    
+            # Request raw signal tx until start bit is received
+            while readin == None or ord(readin) != ord(self.tx_start_code):
+                serial_port.write(self.tx_request_code)
+                readin = self.ser.read(1)
+                if size(readin) < size(self.tx_request_code):  # serial read timed out
+                    raise IOError('Timed out waiting for serial response.')
+    
+        except serial.SerialException as e:
+            rospy.logerr(str(e))
+            return None
+    
+    def receive_signals(self):
+        '''
+        Receives a set of 1D signals from a serial port and packs them into a numpy array
+    
+        serial_port - port of type serial.Serial from which to read
+        signal_size - number of sacalar elements in each 1D signal
+        scalar_size - size of each scalar in bytes
+        signal_bias - value to be subtracted from each read scalar before packing into array
+    
+        returns: 2D numpy array with <num_signals> rows and <signal_size> columns
+        '''
+        self.signals = np.full((self.num_receivers, self.signal_size), self.signal_bias, dtype=float)
+    
+        for channel in range(self.num_receivers):
+            for i in range(self.signal_size):
+                while self.ser.inWaiting() < self.scalar_size:
+                    pass
+                self.signals[channel, i] = float(self.ser.read(self.scalar_size)) - self.signal_bias
+    
 class PassiveSonar(object):
     '''
     Passive Sonar Driver: listens for a pinger and uses multilateration to locate it in a
@@ -114,22 +200,13 @@ class PassiveSonar(object):
         self.load_params()
         # TODO: update to use ros_alarms
 
-        try:
-            self.ser = serial.Serial(port=self.port, baudrate=self.baud, timeout=self.read_timeout)
-            self.ser.flushInput()        
-        except Exception, e:
-            print "\x1b[31mSonar serial connection error:\n\t", e, "\x1b[0m"
-            return None
-
         self.reset_position_estimate(None)
 
-        self.tf_listener = tf.TransformListener()
         self.multilaterator = Multilaterator(self.receiver_locations, self.c, self.method)
 
-        self.rviz_pub = rospy.Publisher("/visualization_marker", Marker, queue_size=10)
+        self.rviz_pub = rospy.Publisher("/passive_sonar/rviz", Marker, queue_size=10)
         self.declare_services()
-        print "\x1b[32mPassive sonar driver initialized\x1b[0m"
-        rospy.spin()
+        rospy.loginfo('Passive sonar driver initialized')
 
     # Passive Sonar Helpers
 
@@ -145,7 +222,7 @@ class PassiveSonar(object):
         required = ['receiver_locations', 'method', 'c', 'sampling_freq', 'upsampling_factor',
                     'locating_frame', 'receiver_array_frame', 'min_variance', 'observation_buffer_size']
         serial = ['port', 'baud', 'tx_request_code', 'tx_start_code', 'read_timeout', 'scalar_size', 
-                  'signal_bias']
+                  'signal_size', 'signal_bias']
         bag = ['bag_filename']
 
         load = lambda prop: setattr(self, prop, rospy.get_param('passive_sonar/' + prop))
@@ -176,35 +253,13 @@ class PassiveSonar(object):
                   }
        [rospy.Service('passive_sonar/' + s[0], s[1], getattr(self, s[0])) for s in services.items()]
 
-    def make_response(header, v, success, err=''):
-        if v is None:
-           return make_response(header, np.full(3, np.NaN), success)
-        return {'header' : header, 'x' : v[0], 'y' : v[1], 'z' : v[2], 'success' : success}
-
-    def getHydrophonePose(self, time):
-        '''
-        Gets the pose of the receiver array frame w.r.t. the <self.locating_frame>
-        (usually /map or /world).
-        
-        Returns a 3x1 translation and a 3x3 rotation matrix (numpy arrays)
-        '''
-        try:
-            self.tf_listener.waitForTransform(
-                self.locating_frame, self.receiver_array_frame, time, timeout=rospy.Duration(0.25))
-            trans, rot = self.tf_listener.lookupTransform(
-                self.locating_frame, self.receiver_array_frame, time)
-            rot = tf.transformations.quaternion_matrix(rot)
-            return trans, rot[:3,:3]
-        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
-            print e
-            raise RuntimeError("Unable to acquire TF for receiver array")
 
     def get_dtoa(self, signals):
         '''
         Returns a list of difference in time of arrival measurements for a signal between
         each of the non_reference hydrophones and the single reference hydrophone.
 
-        signals - (self.receiver_count x self.signal_sz) numpy array. It is assumed that the
+        signals - (self.receiver_count x self.signal_size) numpy array. It is assumed that the
             first row of this array is the reference signal.
         
         returns: list of <self.receiver_count> dtoa measurements in units of microseconds.
@@ -213,7 +268,7 @@ class PassiveSonar(object):
         plt.show()
         sampling_T = 1.0 / self.samp_freq
         upsamp_T = sampling_T / self.upsamp
-        t_max = sampling_T * self.signal_sz
+        t_max = sampling_T * self.signal_size
 
         t = np.arange(0, t_max, step=sampling_T)
         t_upsamp = np.arange(0, t_max, step=upsamp_T)
@@ -234,13 +289,15 @@ class PassiveSonar(object):
         Returns the heading towards an active pinger emmiting at <self.target_freq>.
         Heading will be a unit vector in hydrophone_array frame
         '''
-
-        self.ser.flushInput()
-        header = self.make_header(frame=self.locating_frame)
+        def make_response(header, v, success, err=''):
+            if v is None:
+               return make_response(header, np.full(3, np.NaN), success)
+            return {'header' : header, 'x' : v[0], 'y' : v[1], 'z' : v[2], 'success' : success}
 
         time = rospy.Time.now()
-        signals = receive_signals(self.ser, self.receiver_count, self.signal_sz, 
-                                  self.scalar_sz, self.signal_bias)
+        header = {'stamp' : time, 'frame_id' : self.locating_frame}
+        signals = receive_signals(self.ser, self.receiver_count, self.signal_size, 
+                                  self.scalar_size, self.signal_bias)
         heading = self.multilaterator.getPulseLocation(self.get_dtoa(signals))
 
         # Add heaing observation to buffers if the signals are above the variance threshold
@@ -263,8 +320,6 @@ class PassiveSonar(object):
                 self.heading_end = np.delete(self.line_array, softest_idx, axis=0)
                 self.observation_variances = np.delete(self.observation_variances, softest_idx, axis=0)
 
-        H = Vector3(*heading)
-        print "heading: {}".format(heading)
         return self.make_response(header, heading, False)
 
     def estimate_pinger_position(self, req):
@@ -276,7 +331,7 @@ class PassiveSonar(object):
         p = ls_line_intersection3d(self.heading_start, self.heading_end)
         p = self.pinger_postion
         self.visualize_pinger_pos_estimate()
-        return {'header' : make_header(frame=self.locating_frame),
+        return {'header' : {'stamp' : ros.Time.now(), 'frame_id' : self.locating_frame},
                 'num_headings' : len(self.heading_start),
                 'x' : p[0], 'y' : p[1], 'z' : p[2]}
 
@@ -365,4 +420,5 @@ class PassiveSonar(object):
 if __name__ == "__main__":
     rospy.init_node("passive_sonar_driver")
     ping_ping_motherfucker = PassiveSonar()
+    rospy.spin()
 
