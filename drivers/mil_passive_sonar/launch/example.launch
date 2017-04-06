@@ -1,4 +1,6 @@
 <launch>
+  <node pkg="tf2_ros" type="static_transform_publisher" name="tf_bc" 
+       args="0 0 0 0 0 0 1 hydrophones map" />
 <!-- units in millimeters, microseconds -->
   <rosparam ns="passive_sonar">
     method : "LS"
@@ -18,16 +20,17 @@
     baud : 115200
     tx_request_code : 'B'
     tx_start_code : "\xBB"
-    read_timeout : 1.0
-    target_freq : 35000
+    serial_timeout : 1.0
     scalar_size : 5
     signal_size : 300
     signal_bias : 32767.0
-    sampling_freq : 486618
 
+    target_frequency : 35000
+    sampling_frequency : 486618
+    input_timeout : 0.9
     upsampling_factor : 20
-    locating_frame : "/map"
-    receiver_array_frame : "/hydrophones"
+    locating_frame : "map"
+    receiver_array_frame : "hydrophones"
     min_variance : 200
     observation_buffer_size : 200
   </rosparam>
