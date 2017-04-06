@@ -293,8 +293,6 @@ class PassiveSonar(object):
         
         returns: list of <self.receiver_count> dtoa measurements in units of microseconds.
         '''
-        plt.plot(signals.T)
-        plt.show()
         sampling_T = 1.0 / self.sampling_frequency
         upsamp_T = sampling_T / self.upsampling_factor
         t_max = sampling_T * signals.shape[1]
@@ -302,10 +300,10 @@ class PassiveSonar(object):
         t = np.arange(0, t_max, step=sampling_T)
         t_upsamp = np.arange(0, t_max, step=upsamp_T)
 
-        signals_upsamp = [np.interp(t_upsamp, t, x) for x in signals]
+        signals_upsamp = np.array([np.interp(t_upsamp, t, x) for x in signals])
 
-        dtoa = [get_time_delta(t_upsamp, non_ref, signals[0]) \
-                for non_ref in signals_upsamp[1 : self.receiver_count]]
+        dtoa, cross_corr, t_corr = zip(*[get_time_delta(t_upsamp, non_ref, signals_upsamp[0]) \
+                                         for non_ref in signals_upsamp[1 : self.receiver_count]])
 
         print "dtoa: {}".format(np.array(dtoa)*1E6)
         return dtoa
@@ -318,8 +316,8 @@ class PassiveSonar(object):
         Returns the heading towards an active pinger emmiting at <self.target_frequency>.
         Heading will be a unit vector in hydrophone_array frame
         '''
-        success = True
-        err_str = ''
+        success, err_str = True, ''
+        signals, p0, R = None, None, None
         try:
             time = rospy.Time.now()
 
@@ -349,11 +347,11 @@ class PassiveSonar(object):
                                       x=heading[0], y=heading[1], z=heading[2],
                                       success=success, err_str=err_str)
 
-        # Bag input if self.bagging == True
-        self.bag_data(signals, p0, R)
-
-        # Add heaing observation to buffers if the signals are above the variance threshold
         try:
+            # Bag input if self.bagging == True
+            self.bag_data(signals, p0, R)
+
+            # Add heaing observation to buffers if the signals are above the variance threshold
             variance = np.var(signals)
             if variance > self.min_variance:
                 map_offset = R.dot(heading)
@@ -428,7 +426,7 @@ class PassiveSonar(object):
         self.pinger_position = np.array([np.NaN, np.NaN, np.NaN])
         return {}
 
-    # Passive Sonar RVIZ visualization
+    # Visualization
     def visualize_pinger_pos_estimate(self, bgra):
         '''
         Publishes a marker to RVIZ representing the last calculated estimate of the position of

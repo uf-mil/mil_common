@@ -101,10 +101,19 @@ def get_time_delta(t, non_ref, ref):
     ref - 1D numpy array
 
     returns: scalar (of the same type and units as an element of t)
+    delta_t - time delay of non_ref w.r.t. ref
+    cross_corr - cross-correlation of non_ref with ref
+    t_corr - time delay values corresponding to the cross-correlation
     '''
+    if len(non_ref) != len(ref):
+        raise RuntimeError('Signals must be of the same length')
+    if len(non_ref) != len(t):
+        raise RuntimeError('Vector of time values must have the same size as the signals')
     cross_corr = np.correlate(non_ref, ref, mode='full')
-    max_idx = cross_corr.argmax() - int(len(cross_corr) / 2)
-    return t[max_idx]
+    t_corr = np.linspace(-t[-1], t[-1], len(cross_corr))
+    max_idx = cross_corr.argmax()
+    delta_t = t_corr[max_idx]
+    return delta_t, cross_corr, t_corr
 
 class Multilaterator(object):
     '''
