@@ -17,8 +17,6 @@ from geometry_msgs.msg import Point
 from std_msgs.msg import Header
 from mil_passive_sonar.srv import *
 
-import matplotlib.pyplot as plt
-
 __author__ = 'David Soto'
 
 # GLOBALS
@@ -302,8 +300,12 @@ class PassiveSonar(object):
 
         signals_upsamp = np.array([np.interp(t_upsamp, t, x) for x in signals])
 
-        dtoa, cross_corr, t_corr = zip(*[get_time_delta(t_upsamp, non_ref, signals_upsamp[0]) \
-                                         for non_ref in signals_upsamp[1 : self.receiver_count]])
+        dtoa, cross_corr, t_corr = \
+            map(np.array, zip(*[get_time_delta(t_upsamp, non_ref, signals_upsamp[0]) for non_ref \
+                                in signals_upsamp[1 : self.receiver_count]]))
+
+        t_corr = t_corr[0]  # should all be the same
+        self.visualize_dsp(t_upsamp, signals_upsamp, t_corr, cross_corr)
 
         print "dtoa: {}".format(np.array(dtoa)*1E6)
         return dtoa
@@ -373,9 +375,8 @@ class PassiveSonar(object):
         except Exception as e:
             rospy.logwarn(str(e)) # Service should still return
 
-        print "{} {}".format(type(res), res)
+        print "{}\n{}".format(type(res), res)
         return res
-        print 'fuck'
 
     def estimate_pinger_position(self, req):
         '''
@@ -427,6 +428,22 @@ class PassiveSonar(object):
         return {}
 
     # Visualization
+
+    def visualize_dsp(self, t, signals, t_corr, cross_corr):
+        import matplotlib.pyplot as plt
+        fig, axes = plt.subplots(nrows=2, ncols=1, sharex=False, sharey=False)
+        plt.plasma()
+        axes[0].set_title("Recorded Signals (Black is reference)")
+        axes[0].set_xlabel('Time (microseconds)')
+        axes[1].set_title("Cross-Correlations)")
+        axes[1].set_xlabel('Lag (microseconds)')
+        axes[0].plot(t, signals[0], color='black') # reference
+        axes[0].plot(t, signals[1:].T, )
+        axes[1].plot(t_corr, cross_corr.T)
+        print t_corr.shape, cross_corr.shape
+        plt.show()
+
+
     def visualize_pinger_pos_estimate(self, bgra):
         '''
         Publishes a marker to RVIZ representing the last calculated estimate of the position of
