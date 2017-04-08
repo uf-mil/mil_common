@@ -14,8 +14,8 @@ add_service_files(
     GetPulseHeading.srv
     EstimatePingerPosition.srv
     ResetPositionEstimate.srv
-    StartBagging.srv
-    SaveBag.srv
+    StartLogging.srv
+    SaveLog.srv
     SetFrequency.srv
 )
 

@@ -1,7 +1,6 @@
 #!/usr/bin/python
 from __future__ import division
 import numpy as np
-from sklearn.preprocessing import normalize
 from scipy import optimize
 from itertools import combinations
 
@@ -25,11 +24,15 @@ def ls_line_intersection3d(start, end):
     Find the intersection of lines in the least-squares sense.
     start - Nx3 numpy array of start points
     end - Nx3 numpy array of end points
+    http://cal.cs.illinois.edu/~johannes/research/LS_line_intersect.pdf
     '''
-    assert len(start) == len(end)
-    assert len(start) > 1
+    if len(start) != len(end):
+        raise RuntimeError('Dimension mismatch')
+    if len(start) < 2:
+        raise RuntimeError('Insufficient line count')
     dir_vecs = end - start
-    normalize(dir_vecs, copy=False) # sklearn
+    lengths = np.linalg.norm(dir_vecs).reshape((-1,1))
+    dir_vecs = dir_vecs / lengths
     nx = dir_vecs[:, 0]
     ny = dir_vecs[:, 1]
     nz = dir_vecs[:, 2]
@@ -58,10 +61,13 @@ def ls_line_intersection2d(start, end):
     end - Nx3 numpy array of end points
     https://en.wikipedia.org/wiki/Line-line_intersection#In_two_dimensions_2
     """
-    assert len(start) == len(end)
-    assert len(start) > 1
+    if len(start) != len(end):
+        raise RuntimeError('Dimension mismatch')
+    if len(start) < 2:
+        raise RuntimeError('Insufficient line count')
     dir_vecs = end - start
-    normalize(dir_vecs, copy=False)
+    lengths = np.linalg.norm(dir_vecs).reshape((-1,1))
+    dir_vecs = dir_vecs / lengths
     Rl_90 = np.array([[0, -1], [1, 0]])  # rotates right 90deg
     perp_unit_vecs = Rl_90.dot(dir_vecs.T).T
     A_sum = np.zeros((2, 2))
@@ -151,27 +157,26 @@ class Multilaterator(object):
                         'LS1'      : lambda dtoa: self.estimate_pos_LS1(dtoa, self.cost_LS)}
         print "\x1b[32mSpeed of Sound (c):", self.c, "millimeter/microsecond\x1b[0m"
 
-    def getPulseLocation(self, dtoa, method=None):
+    def get_pulse_location(self, dtoa, method=None):
         '''
         Returns a 3-element list with the  coordinates  of the estimated position of a point source
         transmitter in the frame of the receiver array.
 
         timestamps - list of n-1 time dtoas, all with respect to a reference receiver
         '''
-        try:
-            if method == None:
-                method = self.method
-            assert len(self.receiver_locations) == len(dtoa)
-            return self.solvers[method](dtoa)
-        except KeyboardInterrupt as e:
-            print e
+        if method == None:
+            method = self.method
+        if not len(self.receiver_locations) == len(dtoa):
+            raise RuntimeError('Number of non-reference receivers and dtoa measurents don\'t match')
+        return self.solvers[method](dtoa)
 
     def estimate_pos_bancroft(self, dtoa):
         '''
         Uses the Bancroft Algorithm to solve for the position of a source base on dtoa measurements
         '''
         N = len(dtoa)
-        assert N >= 4
+        if N < 4:
+            raise RuntimeError('At least 4 dtoa measurements are needed')
         
         L = lambda a, b: a[0]*b[0] + a[1]*b[1] + a[2]*b[2] - a[3]*b[3]
         
@@ -241,12 +246,12 @@ class Multilaterator(object):
         x = potential_pulse[0]
         y = potential_pulse[1]
         z = potential_pulse[2]
-        d0 = np.sqrt((x)**2 + (x)**2 + (x)**2)
+        d0 = np.sqrt((x)**2 + (y)**2 + (z)**2)
         for i in range(self.n - 1):
             xi = self.receiver_locations[i, 0]
             yi = self.receiver_locations[i, 1]
             zi = self.receiver_locations[i, 2]
-            di = np.sqrt((xi - x)**2 + (yi - x)**2 + (zi - x)**2)
+            di = np.linalg.norm([xi - x, yi - y, zi -z])
             receiver_i_cost = (di - d0 - self.c * t[i])**2
             cost = cost + receiver_i_cost
         return cost
@@ -287,9 +292,7 @@ class ReceiverArraySim(object):
     def listen(self, pulse):
         '''
         Returns n-1 dtoa measurements for each of the non_reference receivers with respect to the
-        reference
-
-
+        reference.
         '''
         dtoa = []
         for idx in range(self.n - 1):

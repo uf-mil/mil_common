@@ -88,7 +88,10 @@ class _SerialReceiverArray(ReceiverArrayInterface):
         self.num_receivers = num_receivers
 
         load = lambda prop: setattr(self, prop, rospy.get_param('passive_sonar/' + prop))
-        [load(x) for x in param_names]
+        try:
+            [load(x) for x in param_names]
+        except KeyError as e:
+            raise IOError('A required rosparam was not declared: ' + str(e))
 
         self.tf2_buf = tf2_ros.Buffer()
 
@@ -103,7 +106,7 @@ class _SerialReceiverArray(ReceiverArrayInterface):
         try:
             self._request_signals()
             self._receive_signals()
-            T = self.getReceiverPose(rospy.Time.now(), self.receiver_array_frame,
+            T = self.get_receiver_pose(rospy.Time.now(), self.receiver_array_frame,
                                      self.locating_frame)
             self.translation, self.rotation = T
             self.ready = True
@@ -121,19 +124,14 @@ class _SerialReceiverArray(ReceiverArrayInterface):
             start of a transmission
         '''
         self.ser.flushInput()
-        try:
-            readin = None
+        readin = None
 
-            # Request raw signal tx until start bit is received
-            while readin == None or ord(readin) != ord(self.tx_start_code):
-                self.ser.write(self.tx_request_code)
-                readin = self.ser.read(1)
-                if len(readin) < len(self.tx_request_code):  # serial read timed out
-                    raise IOError('Timed out waiting for serial response.')
-
-        except serial.SerialException as e:
-            rospy.logerr(str(e))
-            return None
+        # Request raw signal tx until start bit is received
+        while readin == None or ord(readin) != ord(self.tx_start_code):
+            self.ser.write(self.tx_request_code)
+            readin = self.ser.read(1)
+            if len(readin) < len(self.tx_request_code):  # serial read timed out
+                raise IOError('Timed out waiting for serial response.')
 
     def _receive_signals(self):
         '''
@@ -146,15 +144,26 @@ class _SerialReceiverArray(ReceiverArrayInterface):
 
         returns: 2D numpy array with <num_signals> rows and <signal_size> columns
         '''
+        # this doesn't work well, need to fix
+        def error_correction(num_str):
+            return num_str #temp
+            output = ''
+            for char in num_str:
+                valid = ord(char) > ord('0') and ord(char) < ord('9')
+                output += char if valid else '5'
+            return output
+
         self.signals = np.full((self.num_receivers, self.signal_size), self.signal_bias, dtype=float)
 
         for channel in range(self.num_receivers):
             for i in range(self.signal_size):
                 while self.ser.inWaiting() < self.scalar_size:
-                    pass
-                self.signals[channel, i] = float(self.ser.read(self.scalar_size)) - self.signal_bias
+                    rospy.sleep(0.001)
 
-    def getReceiverPose(time, receiver_array_frame, locating_frame):
+                self.signals[channel, i] = float(error_correction(self.ser.read(self.scalar_size))) \
+                                           - self.signal_bias
+
+    def get_receiver_pose(self, time, receiver_array_frame, locating_frame):
         '''
         Gets the pose of the receiver array frame w.r.t. the locating_frame
         (usually /map or /world).
@@ -174,33 +183,36 @@ class _SerialReceiverArray(ReceiverArrayInterface):
             rospy.err(str(e))
             return None
 
-class _BaggedReceiverArray(ReceiverArrayInterface):
+class _LoggedReceiverArray(ReceiverArrayInterface):
     '''
-    This is the default bagged data ReceiverArrayInterface for the passive sonar driver.
-    It is used when the keyword arg input_mode='bag' is passed to passive sonar driver
+    This is the default logged data ReceiverArrayInterface for the passive sonar driver.
+    It is used when the keyword arg input_mode='log' is passed to passive sonar driver
     constructor.
     '''
 
     def __init__(self, param_names):
         load = lambda prop: setattr(self, prop, rospy.get_param('passive_sonar/' + prop))
-        [load(x) for x in param_names]
+        try:
+            [load(x) for x in param_names]
+        except KeyError as e:
+            raise IOError('A required rosparam was not declared: ' + str(e))
         self.iter_num = 0
         try:
-            self.np_bag = np.load(self.bag_filename)
+            self.np_log = np.load(self.log_filename)
         except Exception as e:
-            rospy.logerr('Unable to access bag file at path ' + self.bag_filename + '. '
+            rospy.logerr('Unable to access log file at path ' + self.log_filename + '. '
                          + str(e))
 
     def input_request(self):
         try:
-            self.signals = self.np_bag['signal'][self.iter_num]
-            self.translation = self.np_bag['trans'][self.iter_num]
-            self.rotation = self.np_bag['rot'][self.iter_num]
+            self.signals = self.np_log['signal'][self.iter_num]
+            self.translation = self.np_log['trans'][self.iter_num]
+            self.rotation = self.np_log['rot'][self.iter_num]
             self.ready = True
             self.iter_num += 1
         except IndexError as e:
             self.ready = False
-            raise StopIteration('The end of the bag was reached.')
+            raise StopIteration('The end of the log was reached.')
 
 class PassiveSonar(object):
     '''
@@ -208,9 +220,9 @@ class PassiveSonar(object):
         specified TF frame.
 
     Args:
-    * input_mode - one of the following strings: ['serial', 'bag', 'signal_cb']
+    * input_mode - one of the following strings: ['serial', 'log', 'signal_cb']
         'serial'    - get signal input with a data acquistion board via a serial port
-        'bag'       - get signal input from a .npz file saved to disk
+        'log'       - get signal input from a .npz file saved to disk
         'signal_cb' - get signal input from user provided function
         For more information on how to use each of these modes, read the wiki page.
     * signal_callback - Optional function used as a source of input if in 'signal_cb' mode
@@ -231,9 +243,9 @@ class PassiveSonar(object):
           Set's the frequncy of the pinger that is being listened to.
       * reset_frequency_estimate
           Flushes all of the saved heading observations, and set's the postion estimate to NaN
-      * start_bagging
+      * start_logging
           Starts recording all of the received signals to an internal buffer.
-      * save_bag
+      * save_log
           Dumps the buffer of recorded signals to a file.
 
     An visualization marker will be published to RVIZ for both the heading and the estimated pinger
@@ -245,12 +257,12 @@ class PassiveSonar(object):
 
         self.input_mode = input_mode
         self.load_params()
-        self.bagging = False
+        self.logging = False
 
         # TODO: update to use ros_alarms
 
-        if self.input_mode == 'bag':
-            self.input_source = _BaggedReceiverArray(self.input_src_params['bag'])
+        if self.input_mode == 'log':
+            self.input_source = _LoggedReceiverArray(self.input_src_params['log'])
 
         elif self.input_mode == 'serial':
             self.input_source = _SerialReceiverArray(self.input_src_params['serial'], self.receiver_count)
@@ -262,7 +274,7 @@ class PassiveSonar(object):
             self.input_source = custom_input_source
 
         else:
-            raise RuntimeError(self.input_mode + 'is not a supported input mode')
+            raise RuntimeError('\'' + self.input_mode + '\' is not a supported input mode')
 
         self.reset_position_estimate(None)
 
@@ -293,7 +305,7 @@ class PassiveSonar(object):
          'serial' : ['port', 'baud', 'tx_request_code', 'tx_start_code', 'read_timeout',
                      'scalar_size', 'signal_size', 'signal_bias', 'locating_frame',
                      'receiver_array_frame'],
-         'bag'    : ['bag_filename' ,'locating_frame', 'receiver_array_frame']
+         'log'    : ['log_filename' ,'locating_frame', 'receiver_array_frame']
         }
 
         load = lambda prop: setattr(self, prop, rospy.get_param('passive_sonar/' + prop))
@@ -314,20 +326,24 @@ class PassiveSonar(object):
                       'get_pulse_heading'        : GetPulseHeading,
                       'estimate_pinger_position' : EstimatePingerPosition,
                       'reset_position_estimate'  : ResetPositionEstimate,
-                      'start_bagging'            : StartBagging,
-                      'save_bag'                 : SaveBag,
+                      'start_logging'            : StartLogging,
+                      'save_log'                 : SaveLog,
                       'set_frequency'            : SetFrequency
                   }
        [rospy.Service('passive_sonar/' + s[0], s[1], getattr(self, s[0])) for s in services.items()]
 
-    def bag_data(self, signals, trans, rot):
-        if self.bagging:
+    def log_data(self, signals, trans, rot):
+        '''
+        Logs the signal and tf data to a file that can then be palyedback and used as input by 
+        running the driver with input_mode='log'
+        '''
+        if self.logging:
             if signals.size == None:
-                self.signals_bag = self.signals_bag.reshape(0, signals.shape[0],
+                self.signals_log = self.signals_log.reshape(0, signals.shape[0],
                                                             signals.shape[1])
-            self.signals_bag = np.stack((self.signals_bag, [signals]))
-            self.trans_bag = np.stack((self.trans_bag, [trans]))
-            self.rot_bag = np.stack((self.rot_bag, [rot]))
+            self.signals_log = np.stack((self.signals_log, [signals]))
+            self.trans_log = np.stack((self.trans_log, [trans]))
+            self.rot_log = np.stack((self.rot_log, [rot]))
 
 
     def get_dtoa(self, signals):
@@ -354,7 +370,7 @@ class PassiveSonar(object):
                                 in signals_upsamp[1 : self.receiver_count]]))
 
         t_corr = t_corr[0]  # should all be the same
-        self.visualize_dsp(t_upsamp, signals_upsamp, t_corr, cross_corr)
+        self.visualize_dsp(t_upsamp, signals_upsamp, t_corr, cross_corr, dtoa)
 
         print "dtoa: {}".format(np.array(dtoa)*1E6)
         return dtoa
@@ -374,7 +390,7 @@ class PassiveSonar(object):
 
             # Poll input source until it reports it is ready
             self.input_source.input_request()
-            while not self.input_source.ready:
+            while not self.input_source.ready and not rospy.is_shutdown():
                 if rospy.Time.now() - time > rospy.Duration(self.input_timeout):
                     raise IOError('Timed out waiting for input source')
                 else:
@@ -385,7 +401,7 @@ class PassiveSonar(object):
             signals, p0, R = self.input_source.get_input()
 
             # Carry out multilateration to get heading to pinger
-            heading = self.multilaterator.getPulseLocation(self.get_dtoa(signals))
+            heading = self.multilaterator.get_pulse_location(self.get_dtoa(signals))
             heading = heading / np.linalg.norm(heading)
 
         except Exception as e:
@@ -399,8 +415,8 @@ class PassiveSonar(object):
                                       success=success, err_str=err_str)
 
         try:
-            # Bag input if self.bagging == True
-            self.bag_data(signals, p0, R)
+            # Log input if self.logging == True
+            self.log_data(signals, p0, R)
 
             # Add heaing observation to buffers if the signals are above the variance threshold
             variance = np.var(signals)
@@ -446,42 +462,42 @@ class PassiveSonar(object):
         '''
         Clears all the heading and amplitude buffers and makes the position estimate NaN
         '''
-	self.heading_start = np.empty((0, 3), float)
-	self.heading_end = np.empty((0, 3), float)
+        self.heading_start = np.empty((0, 3), float)
+        self.heading_end = np.empty((0, 3), float)
         self.observation_variances = np.empty((0, 0), float)
         self.pinger_position = np.array([np.NaN, np.NaN, np.NaN])
         return {}
 
-    def start_bagging(self, req):
+    def start_logging(self, req):
         '''
-        Enables bagging and checks that we have write access to the desired save path.
-        Resets the bagged data buffers.
+        Enables logging and checks that we have write access to the desired save path.
+        Resets the logged data buffers.
         '''
-        self.bag_filename = req.filename if req.filename.endswith('.npz') else req.filename + '.npz'
+        self.log_filename = req.filename if req.filename.endswith('.npz') else req.filename + '.npz'
 
-        if not os.access(self.bag_filename, os.W_OK):
-            raise IOError("Unable to write to file: " + self.bag_filename)
+        if not os.access(self.log_filename, os.W_OK):
+            raise IOError("Unable to write to file: " + self.log_filename)
 
-        self.bagging = True
-        self.signals_bag = None
-        self.trans_bag = np.array([]).reshape(0, 3)
-        self.rot_bag = np.array([]).reshape(0, 3, 3)
+        self.logging = True
+        self.signals_log = None
+        self.trans_log = np.array([]).reshape(0, 3)
+        self.rot_log = np.array([]).reshape(0, 3, 3)
 
-    def save_bag(self, req):
+    def save_log(self, req):
         '''
         Saves the buffers holding signals, and receiver array poses to a compressed .npz
         file. These files can be used as source of input by running the passive sonar
-        driver with input_mode='bag' and providing filename in a rosparam.
+        driver with input_mode='log' and providing filename in a rosparam.
         '''
         try:
-            np.savez_compressed(file=self.bag_filename, signal=self.signals_bag,
-                                trans=self.trans_bag, rot=self.rot_bag)
+            np.savez_compressed(file=self.log_filename, signal=self.signals_log,
+                                trans=self.trans_log, rot=self.rot_log)
 
         except IOError as e: # Couln't save to specified path
             rospy.logerr(str(e))
 
         finally:
-            self.bagging = False
+            self.logging = False
 
     def set_frequency(self, req):
         '''
@@ -496,7 +512,10 @@ class PassiveSonar(object):
 
     # Visualization
 
-    def visualize_dsp(self, t, signals, t_corr, cross_corr):
+    def visualize_dsp(self, t, signals, t_corr, cross_corr, dtoa):
+        '''
+        Plots the received signals and cross correlations and publishes the image to /passive_sonar/plot
+        '''
         import matplotlib
         matplotlib.use('agg')
         import matplotlib.pyplot as plt
@@ -507,19 +526,23 @@ class PassiveSonar(object):
         axes[0].set_xlabel('Time (microseconds)')
         axes[1].set_title("Cross-Correlations)")
         axes[1].set_xlabel('Lag (microseconds)')
+        plt.annotate('DTOA: {}'.format(dtoa)
 
-        axes[0].plot(t, signals[0], color='black') # reference
-        axes[0].plot(t, signals[1:].T, )
-        axes[1].plot(t_corr, cross_corr.T)
+        fig.set_size_inches(9.9, 5.4) # Experimentally determined
+        fig.set_dpi(400)
         fig.tight_layout(pad=2)
+
+        axes[0].plot(t, signals[0], linewidth=0.75, color='black') # reference
+        axes[0].plot(t, signals[1:].T, linewidth=0.75 )
+        axes[1].plot(t_corr, cross_corr.T, linewidth=0.75)
+
         fig.canvas.draw() # render plot
-        plot_img = np.fromstring(fig.canvas.tostring_rgb(), # numpify
-                                 dtype=np.uint8, sep='')
-        plot_img = plot_img.reshape(fig.canvas.
-                                    get_width_height()[::-1] + (3,))
+        plot_img = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
+        plot_img = plot_img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+
         try:
             self.plot_pub.publish(CvBridge().cv2_to_imgmsg(plot_img, 'bgr8'))
-        except CvBridgeError, e:
+        except CvBridgeError as e:
             rospy.logerr(e)  # Intentionally absorb CvBridge Errors
 
     def visualize_pinger_pos_estimate(self, bgra):
@@ -537,7 +560,7 @@ class PassiveSonar(object):
         marker.type = marker.SPHERE
         marker.action = marker.ADD
         marker.scale.x = 0.2
-        np.clip(bgra, 0.0, 1.0)
+        bgra = np.clip(bgra, 0.0, 1.0)
         marker.color.b = bgra[0]
         marker.color.g = bgra[1]
         marker.color.r = bgra[2]

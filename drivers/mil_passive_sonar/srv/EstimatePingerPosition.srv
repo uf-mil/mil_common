@@ -5,7 +5,7 @@
 Header header
 
 # Number of heading observations used to calculate position estimate
-int32  num_headings
+uint32  num_headings
 
 # Position estimate
 float32 x
