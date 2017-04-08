@@ -58,8 +58,13 @@ def getReceiverPose(time, receiver_array_frame, locating_frame):
         return None
 
 class ReceiverArrayInterface(object):
-    ready = False
-    def input_request(self, callback):
+    '''
+    This class encapsulates the process of acquiring signals from the receiver array
+    and acquiring the pose of the receiver array in a world fixed frame.
+    '''
+    ready = False  # Request would be immediately responded to if made
+
+    def input_request(self):
         '''
         The driver will call this function to request signal and tf data.
         Inheriting classes SHOULD OVERRIDE this method and do the following:
@@ -95,6 +100,11 @@ class ReceiverArrayInterface(object):
 
 
 class _SerialReceiverArray(ReceiverArrayInterface):
+    '''
+    This is the default serial ReceiverArrayInterface for the passive sonar driver.
+    It is used when the keyword arg input_mode='serial' is passed to the passive sonar
+    driver constructor.
+    '''
     def __init__(self, param_names, num_receivers):
         self.num_receivers = num_receivers
         load = lambda prop: setattr(self, prop, rospy.get_param('passive_sonar/' + prop))
@@ -161,6 +171,29 @@ class _SerialReceiverArray(ReceiverArrayInterface):
                     pass
                 self.signals[channel, i] = float(self.ser.read(self.scalar_size)) - self.signal_bias
 
+class _BaggedReceiverArray(ReceiverArrayIterface):
+    '''
+    This is the default bagged data ReceiverArrayInterface for the passive sonar driver.
+    It is used when the keyword arg input_mode='bag' is passed to passive sonar driver
+    constructor.
+    '''
+
+    def __init__(self, param_names):
+        load = lambda prop: setattr(self, prop, rospy.get_param('passive_sonar/' + prop))
+        [load(x) for x in param_names]
+        self.iter_num = 0
+        self.np_bag = np.load(self.bag_filename)
+
+    def reqest_input(self):
+        try:
+            self.signals = self.np_bag['signals_' + str(self.iter_num)]
+            self.trans = self.np_bag['trans_' + str(self.iter_num)]
+            self.rot = self.np_bag['rot_' + str(self.iter_num)]
+            self.ready = True
+        except KeyError as e:
+            self.ready = False
+            raise StopIteration('The end of the bag was reached.')
+
 class PassiveSonar(object):
     '''
     Passive Sonar Driver: listens for a pinger and uses multilateration to locate it in a
@@ -209,7 +242,7 @@ class PassiveSonar(object):
         # TODO: update to use ros_alarms
 
         if self.input_mode == 'bag':
-            self.input_source = _BagInput(self.input_src_params['bag'])
+            self.input_source = _BaggedReceiverArray(self.input_src_params['bag'])
 
         elif self.input_mode == 'serial':
             self.input_source = _SerialReceiverArray(self.input_src_params['serial'], self.receiver_count)
