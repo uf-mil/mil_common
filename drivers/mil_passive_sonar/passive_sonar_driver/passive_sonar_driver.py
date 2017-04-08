@@ -171,7 +171,7 @@ class _SerialReceiverArray(ReceiverArrayInterface):
                     pass
                 self.signals[channel, i] = float(self.ser.read(self.scalar_size)) - self.signal_bias
 
-class _BaggedReceiverArray(ReceiverArrayIterface):
+class _BaggedReceiverArray(ReceiverArrayInterface):
     '''
     This is the default bagged data ReceiverArrayInterface for the passive sonar driver.
     It is used when the keyword arg input_mode='bag' is passed to passive sonar driver
@@ -182,15 +182,20 @@ class _BaggedReceiverArray(ReceiverArrayIterface):
         load = lambda prop: setattr(self, prop, rospy.get_param('passive_sonar/' + prop))
         [load(x) for x in param_names]
         self.iter_num = 0
-        self.np_bag = np.load(self.bag_filename)
-
-    def reqest_input(self):
         try:
-            self.signals = self.np_bag['signals_' + str(self.iter_num)]
-            self.trans = self.np_bag['trans_' + str(self.iter_num)]
-            self.rot = self.np_bag['rot_' + str(self.iter_num)]
+            self.np_bag = np.load(self.bag_filename)
+        except Exception as e:
+            rospy.logerr('Unable to access bag file at path ' + self.bag_filename + '. '
+                         + str(e))
+
+    def input_request(self):
+        try:
+            self.signals = self.np_bag['signal'][self.iter_num]
+            self.translation = self.np_bag['trans'][self.iter_num]
+            self.rotation = self.np_bag['rot'][self.iter_num]
             self.ready = True
-        except KeyError as e:
+            self.iter_num += 1
+        except IndexError as e:
             self.ready = False
             raise StopIteration('The end of the bag was reached.')
 
@@ -261,7 +266,6 @@ class PassiveSonar(object):
         self.multilaterator = Multilaterator(self.receiver_locations, self.c, self.method)
 
         self.plot_pub = rospy.Publisher('/passive_sonar/plot', Image, queue_size=1)
-
         self.rviz_pub = rospy.Publisher("/passive_sonar/rviz", Marker, queue_size=10)
         self.declare_services()
         rospy.loginfo('Passive sonar driver initialized')
@@ -315,9 +319,13 @@ class PassiveSonar(object):
 
     def bag_data(self, signals, trans, rot):
         if self.bagging:
-            self.signals_bag.append(signals)
-            self.trans_bag.append(trans)
-            self.rot_bag.append(rot)
+            if signals.size == None:
+                self.signals_bag = self.signals_bag.reshape(0, signals.shape[0],
+                                                            signals.shape[1])
+            self.signals_bag = np.stack((self.signals_bag, [signals]))
+            self.trans_bag = np.stack((self.trans_bag, [trans]))
+            self.rot_bag = np.stack((self.rot_bag, [rot]))
+
 
     def get_dtoa(self, signals):
         '''
@@ -421,7 +429,9 @@ class PassiveSonar(object):
         Uses a buffer of prior observations to estimate the position of the pinger as the intersection
         of a set of 3d lines in the least-squares sense.
         '''
-        assert len(self.heading_start) > 1
+        if len(self.heading_start) > 1:
+            raise RuntimeError(
+                'Not enough heading observations to estimate the pinger position')
         p = ls_line_intersection3d(self.heading_start, self.heading_end)
         p = self.pinger_postion
         self.visualize_pinger_pos_estimate()
@@ -440,19 +450,35 @@ class PassiveSonar(object):
         return {}
 
     def start_bagging(self, req):
+        '''
+        Enables bagging and checks that we have write access to the desired save path.
+        Resets the bagged data buffers.
+        '''
         self.bag_filename = req.filename if req.filename.endswith('.npz') else req.filename + '.npz'
+
         if not os.access(self.bag_filename, os.W_OK):
             raise IOError("Unable to write to file: " + self.bag_filename)
+
         self.bagging = True
-        self.signal_bag = []
-        self.rot_bag = []
-        self.trans_bag = []
+        self.signals_bag = None
+        self.trans_bag = np.array([]).reshape(0, 3)
+        self.rot_bag = np.array([]).reshape(0, 3, 3)
 
     def save_bag(self, req):
+        '''
+        Saves the buffers holding signals, and receiver array poses to a compressed .npz
+        file. These files can be used as source of input by running the passive sonar
+        driver with input_mode='bag' and providing filename in a rosparam.
+        '''
         try:
-            pass
-        except Exception as e:
+            np.savez_compressed(file=self.bag_filename, signal=self.signals_bag,
+                                trans=self.trans_bag, rot=self.rot_bag)
+
+        except IOError as e: # Couln't save to specified path
             rospy.logerr(str(e))
+
+        finally:
+            self.bagging = False
 
     def set_frequency(self, req):
         '''
@@ -482,7 +508,8 @@ class PassiveSonar(object):
         axes[0].plot(t, signals[0], color='black') # reference
         axes[0].plot(t, signals[1:].T, )
         axes[1].plot(t_corr, cross_corr.T)
-        fig.tight_layout(pad=0).canvas.draw() # render plot
+        fig.tight_layout(pad=2)
+        fig.canvas.draw() # render plot
         plot_img = np.fromstring(fig.canvas.tostring_rgb(), # numpify
                                  dtype=np.uint8, sep='')
         plot_img = plot_img.reshape(fig.canvas.
@@ -546,6 +573,15 @@ class PassiveSonar(object):
 
 if __name__ == "__main__":
     rospy.init_node("passive_sonar_driver")
-    ping_ping_motherfucker = PassiveSonar()
+
+    mode = None
+    try:
+       mode = rospy.get_param('passive_sonar/input_mode')
+    except KeyError as e:
+       mode = 'serial'
+       rospy.logerr('The param passive_sonar/input_mode was not set, defaulting to \
+                    \'serial\'. (' + str(e) + ')')
+
+    ping_ping_motherfucker = PassiveSonar(input_mode=mode)
     rospy.spin()
 

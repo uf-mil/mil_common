@@ -3,6 +3,7 @@
        args="0 0 0 0 0 0 1 hydrophones map" />
 <!-- units in millimeters, microseconds -->
   <rosparam ns="passive_sonar">
+    input_mode : bag
     method : "LS"
     c : 1.484
     receiver_locations: <!-- SubjuGator 8 (2017) configuration -->
@@ -24,6 +25,8 @@
     scalar_size : 5
     signal_size : 300
     signal_bias : 32767.0
+
+    bag_filename : /home/santiago/sonar_bag.npz
 
     target_frequency : 35000
     sampling_frequency : 486618
