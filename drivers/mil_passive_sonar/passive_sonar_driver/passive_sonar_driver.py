@@ -12,6 +12,9 @@ import threading
 import serial
 import os
 
+from cv_bridge import CvBridge, CvBridgeError
+from sensor_msgs.msg import Image
+
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point
 from std_msgs.msg import Header
@@ -224,6 +227,8 @@ class PassiveSonar(object):
 
         self.multilaterator = Multilaterator(self.receiver_locations, self.c, self.method)
 
+        self.plot_pub = rospy.Publisher('/passive_sonar/plot', Image, queue_size=1)
+
         self.rviz_pub = rospy.Publisher("/passive_sonar/rviz", Marker, queue_size=10)
         self.declare_services()
         rospy.loginfo('Passive sonar driver initialized')
@@ -430,19 +435,29 @@ class PassiveSonar(object):
     # Visualization
 
     def visualize_dsp(self, t, signals, t_corr, cross_corr):
+        import matplotlib
+        matplotlib.use('agg')
         import matplotlib.pyplot as plt
-        fig, axes = plt.subplots(nrows=2, ncols=1, sharex=False, sharey=False)
         plt.plasma()
+
+        fig, axes = plt.subplots(nrows=2, ncols=1, sharex=False, sharey=False)
         axes[0].set_title("Recorded Signals (Black is reference)")
         axes[0].set_xlabel('Time (microseconds)')
         axes[1].set_title("Cross-Correlations)")
         axes[1].set_xlabel('Lag (microseconds)')
+
         axes[0].plot(t, signals[0], color='black') # reference
         axes[0].plot(t, signals[1:].T, )
         axes[1].plot(t_corr, cross_corr.T)
-        print t_corr.shape, cross_corr.shape
-        plt.show()
-
+        fig.tight_layout(pad=0).canvas.draw() # render plot
+        plot_img = np.fromstring(fig.canvas.tostring_rgb(), # numpify
+                                 dtype=np.uint8, sep='')
+        plot_img = plot_img.reshape(fig.canvas.
+                                    get_width_height()[::-1] + (3,))
+        try:
+            self.plot_pub.publish(CvBridge().cv2_to_imgmsg(plot_img, 'bgr8'))
+        except CvBridgeError, e:
+            rospy.logerr(e)  # Intentionally absorb CvBridge Errors
 
     def visualize_pinger_pos_estimate(self, bgra):
         '''
