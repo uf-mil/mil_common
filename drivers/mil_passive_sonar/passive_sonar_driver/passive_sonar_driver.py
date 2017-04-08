@@ -24,7 +24,6 @@ __author__ = 'David Soto'
 
 # GLOBALS
 lock = threading.Lock()  # prevent multiple threads simultaneously using a serial port
-tf2_buf = tf2_ros.Buffer()
 
 def thread_lock(lock):  # decorator
     '''
@@ -36,26 +35,6 @@ def thread_lock(lock):  # decorator
                 result = function_to_lock(*args, **kwargs)
         return locked_function
     return lock_thread
-
-def getReceiverPose(time, receiver_array_frame, locating_frame):
-    '''
-    Gets the pose of the receiver array frame w.r.t. the locating_frame
-    (usually /map or /world).
-    
-    Returns a 3x1 translation and a 3x3 rotation matrix (numpy arrays)
-    '''
-    try:
-        tfl = tf2_ros.TransformListener(tf2_buf)
-        T = tf2_buf.lookup_transform(receiver_array_frame, locating_frame, time,
-                                              timeout=rospy.Duration(0.20))
-        q = T.transform.rotation
-        t = T.transform.translation
-        rot = transformations.quaternion_matrix([q.w, q.x, q.y, q.z])
-        trans = np.array([t.x, t.y, t.z])
-        return trans, rot[:3,:3]
-    except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
-        rospy.err(str(e))
-        return None
 
 class ReceiverArrayInterface(object):
     '''
@@ -107,8 +86,11 @@ class _SerialReceiverArray(ReceiverArrayInterface):
     '''
     def __init__(self, param_names, num_receivers):
         self.num_receivers = num_receivers
+
         load = lambda prop: setattr(self, prop, rospy.get_param('passive_sonar/' + prop))
         [load(x) for x in param_names]
+
+        self.tf2_buf = tf2_ros.Buffer()
 
         try:
             self.ser = serial.Serial(port=self.port, baudrate=self.baud, timeout=self.read_timeout)
@@ -121,7 +103,8 @@ class _SerialReceiverArray(ReceiverArrayInterface):
         try:
             self._request_signals()
             self._receive_signals()
-            T = getReceiverPose(rospy.Time.now(), self.receiver_array_frame, self.locating_frame)
+            T = self.getReceiverPose(rospy.Time.now(), self.receiver_array_frame,
+                                     self.locating_frame)
             self.translation, self.rotation = T
             self.ready = True
         except Exception as e:
@@ -170,6 +153,26 @@ class _SerialReceiverArray(ReceiverArrayInterface):
                 while self.ser.inWaiting() < self.scalar_size:
                     pass
                 self.signals[channel, i] = float(self.ser.read(self.scalar_size)) - self.signal_bias
+
+    def getReceiverPose(time, receiver_array_frame, locating_frame):
+        '''
+        Gets the pose of the receiver array frame w.r.t. the locating_frame
+        (usually /map or /world).
+
+        Returns a 3x1 translation and a 3x3 rotation matrix (numpy arrays)
+        '''
+        try:
+            tfl = tf2_ros.TransformListener(self.tf2_buf)
+            T = self.tf2_buf.lookup_transform(receiver_array_frame, locating_frame, time,
+                                              timeout=rospy.Duration(0.20))
+            q = T.transform.rotation
+            t = T.transform.translation
+            rot = transformations.quaternion_matrix([q.w, q.x, q.y, q.z])
+            trans = np.array([t.x, t.y, t.z])
+            return trans, rot[:3,:3]
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
+            rospy.err(str(e))
+            return None
 
 class _BaggedReceiverArray(ReceiverArrayInterface):
     '''
