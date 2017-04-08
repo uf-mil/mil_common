@@ -57,7 +57,7 @@ def getReceiverPose(time, receiver_array_frame, locating_frame):
         rospy.err(str(e))
         return None
 
-class PassiveSonarInputSource(object):
+class ReceiverArrayInterface(object):
     ready = False
     def input_request(self, callback):
         '''
@@ -94,7 +94,7 @@ class PassiveSonarInputSource(object):
         self.ready = False
 
 
-class _SerialInput(PassiveSonarInputSource):
+class _SerialReceiverArray(ReceiverArrayInterface):
     def __init__(self, param_names, num_receivers):
         self.num_receivers = num_receivers
         load = lambda prop: setattr(self, prop, rospy.get_param('passive_sonar/' + prop))
@@ -212,12 +212,12 @@ class PassiveSonar(object):
             self.input_source = _BagInput(self.input_src_params['bag'])
 
         elif self.input_mode == 'serial':
-            self.input_source = _SerialInput(self.input_src_params['serial'], self.receiver_count)
+            self.input_source = _SerialReceiverArray(self.input_src_params['serial'], self.receiver_count)
 
         elif self.input_mode == 'custom_cb':
-            if not issubclass(custom_input_source, PassiveSonarInputSource):
+            if not issubclass(custom_input_source, ReceiverArrayInterface):
                 raise RuntimeError('The custom input source provided ({}) is not derived from {}'
-                    .format(type(custom_input_source), 'PassiveSonarInputSource'))
+                    .format(type(custom_input_source), 'ReceiverArrayInterface'))
             self.input_source = custom_input_source
 
         else:
