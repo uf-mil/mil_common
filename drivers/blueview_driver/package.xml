@@ -13,6 +13,8 @@
   <run_depend>bvtsdkpkg</run_depend>
   <build_depend>roscpp</build_depend>
   <run_depend>roscpp</run_depend>
+  <build_depend>libpcl-all-dev</build_depend>
+  <run_depend>libpcl-all</run_depend>
   <build_depend>cv_bridge</build_depend>
   <run_depend>cv_bridge</run_depend>
   <build_depend>image_transport</build_depend>
