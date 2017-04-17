@@ -7,7 +7,6 @@ find_package(catkin
     geometry_msgs
     sensor_msgs
     actionlib
-    interactive_markers
     std_msgs
     std_srvs
     actionlib_msgs
@@ -43,20 +42,15 @@ catkin_package(
     message_runtime
     geometry_msgs
     actionlib
-    tf
-    interactive_markers
     std_msgs
     std_srvs
     actionlib_msgs
   INCLUDE_DIRS
-    include
   LIBRARIES
 )
 
 include_directories(
-    include
   SYSTEM
-    ${EIGEN_INCLUDE_DIRS}
     ${Boost_INCLUDE_DIR}
     ${catkin_INCLUDE_DIRS}
 )

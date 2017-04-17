@@ -29,8 +29,4 @@
   <run_depend>actionlib_msgs</run_depend>
   <run_depend>sensor_msgs</run_depend>
 
-<export>
-    <cpp cflags="-I${prefix}/include `pkg-config --cflags eigen3`"/>
-</export>
-
 </package>
