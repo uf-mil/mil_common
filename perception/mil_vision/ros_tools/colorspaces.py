@@ -5,7 +5,7 @@ import cv2
 import argparse
 
 NAME = 'Colorspaces'
-clicked = False
+clicked = True
 
 
 def viz_colorspaces(rgb_image, viz_scale, disp_size=None):
@@ -50,20 +50,29 @@ def viz_colorspaces(rgb_image, viz_scale, disp_size=None):
             Return three lists for each channel in that color space.
             Each of the three return lists contains a list with two elements
             Those two elements are :
-            - The actual histogram information stored as a numpy array in
-              the requested shape (width, height)
-            - The indices where the histogram is non_zero
+            - The image of the histogram in the requested shape (width, height)
+            - The indices where the image of the histogram is non_zero
             """
 
             y = []
+            # https://github.com/opencv/opencv/blob/master/samples/python/hist.py
+            # lines 32 - 39
             for ch in xrange(3):
                 h = np.zeros((height, 255, 3))
                 bins = np.arange(255).reshape(255, 1)
                 hist_item = cv2.calcHist([im], [ch], None, [255], [0, 255])
-                cv2.normalize(hist_item, hist_item, 0, 255, cv2.NORM_MINMAX)
+                cv2.normalize(hist_item, hist_item, 0, height, cv2.NORM_MINMAX)
                 hist = np.int32(np.around(hist_item))
                 pts = np.int32(np.column_stack((bins, hist)))
+                # pts = pts[0]
+                # print 'pts: ', pts.shape
+                # print 'element', pts[0]
+                # print 'real_points', pts
+                cv2.imshow('before', h)
                 cv2.polylines(h, [pts], False, (1, 1, 255))
+                cv2.imshow('after', h)
+                print type(cv2.polylines(h, [pts], False, (1, 1, 255)))
+                print cv2.polylines(h, [pts], False, (1, 1, 255)).shape
                 h = np.flipud(h)
                 h = cv2.resize(h, dsize=(width, height))
                 y.append([h, np.where(h != 0)])
@@ -85,6 +94,7 @@ def viz_colorspaces(rgb_image, viz_scale, disp_size=None):
                 # hist[0] := histogram for each channel of a given colorspace
                 # hist[1] := non_zero_indices
                 viz[h*space:h*(space + 1), channel*w:(channel + 1)*w][hist[1]] = hist[0][hist[1]]
+                # viz[h*space:h*(space + 1), channel*w:(channel + 1)*w] = hist[0]
                 channel = channel + 1
             space = space + 1
 
@@ -136,3 +146,4 @@ if __name__ == '__main__':
         rospy.spin()
 
     cv2.destroyAllWindows()
+1
