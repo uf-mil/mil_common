@@ -39,7 +39,7 @@ alias tmux="tmux -L \$(echo \$CATKIN_DIR | rev | cut -d '/' -f1 | rev)"
 alias shared-tmux="tmux -L mil_ws"
 
 # Catkin workspace management
-alias cm="catkin_make -C \$CATKIN_DIR -j8"
+alias cm="catkin_make -C \$CATKIN_DIR -j$(($(nproc)-1))"
 
 # Simulation
 alias killgazebo="killall -9 gazebo && killall -9 gzserver && killall -9 gzclient"
