@@ -6,7 +6,7 @@ max_hits_in_cell: 200
 min_object_seperation_distance: 3.0
 ogrid_inflation_cell: 2
 
-executive_rate: 10
+executive_rate: 5
 
 number_persistant_point_clouds: 20
 
@@ -14,7 +14,7 @@ filter_points_leaf_size_x: 0.2
 filter_points_leaf_size_y: 0.2
 filter_points_leaf_size_z: 0.2
 
-outier_removal_std_dev_thresh: 2.0
+outier_removal_std_dev_thresh: 1.5
 outier_removal_mean_k: 10
 
 remove_points_near_lidar_distance: 5
