@@ -52,7 +52,7 @@ void ogrid_manager::update_ogrid(const id_object_map_ptr objects, nav_msgs::Odom
   // std::cout << object.second.points.size() << std::endl;
   for(const auto &point : object.second.points) {
 
-    cv::circle(ogrid_mat_, cv::Point(point.x/0.3 + 10000*0.3/2, point.y/0.3 + 10000*0.3/2), params.ogrid_inflation_cell, cv::Scalar(99), -1);
+    cv::circle(ogrid_mat_, cv::Point(point.x/0.3 + 10000*0.3/2, point.y/0.3 + 10000*0.3/2), params.ogrid_inflation_cell*exp(-object.second.distance*params.distance_decay_factor), cv::Scalar(99), -1);
   }
     // auto q = object.second.pose.orientation;
     // double siny = 2.0 * (q.w * q.z);

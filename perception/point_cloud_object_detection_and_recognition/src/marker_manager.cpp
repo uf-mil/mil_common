@@ -53,7 +53,7 @@ visualization_msgs::Marker marker_manager::get_marker_text(const mil_msgs::Perce
     marker.action = visualization_msgs::Marker::ADD;
     marker.pose = object.pose;
     marker.scale.z = 1;
-    marker.text = object.classification + " | " + object.labeled_classification + " (" + id + ")";
+    marker.text = object.classification + " | " + object.labeled_classification + " (" + id + ") \n " + object.attribute + " | " + std::to_string(object.distance);
         marker.color.a = 0.7;
         marker.color.r = 1.0;
         marker.color.g = 1.0;

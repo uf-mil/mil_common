@@ -150,9 +150,14 @@ void pcodar_controller::executive() {
       z.id = w->first;
       auto cl = w->second.classification;
       auto cll = w->second.labeled_classification;
+      auto cla = w->second.attribute;
       w->second = z;
       w->second.classification = cl;
       w->second.labeled_classification = cll;
+      w->second.attribute = cla;
+      auto diffx = latest_odom_->pose.pose.position.x - w->second.pose.position.x;
+      auto diffy = latest_odom_->pose.pose.position.y - w->second.pose.position.y;
+      w->second.distance = std::hypot(diffx, diffy);
     }
   } catch (...) {
     std::cout << "oi check yo self" << std::endl;

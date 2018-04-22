@@ -46,14 +46,27 @@ bool service_provider::DBQuery_cb(mil_msgs::ObjectDBQuery::Request &req,
       res.found = false;
       return false;
     }
-    std::string cmd = req.cmd.substr(pos + 1);
+    std::string after_equals = req.cmd.substr(pos + 1);
+    std::vector<std::string> split;
+    boost::algorithm::split(split, after_equals, boost::algorithm::is_any_of(" "));
+    if (split.empty()) {
+      res.found = false;
+      return false;
+    }
+    std::string cmd = split[0];
+    std::string attribute = "";
+    if (split.size() > 1) {
+      for (auto str_itr = split.begin() + 1; str_itr != split.end(); ++str_itr)
+        attribute += *str_itr;
+    }
     auto it = id_object_map_->find(id);
     if (it == id_object_map_->end()) {
       std::cout << "Could not find id " << id << std::endl;
       return false;
     } else {
-      std::cout << "set " << id << " to " << cmd << std::endl;
+      std::cout << "set " << id << " to " << cmd << " with attribute " << attribute << std::endl;
       it->second.labeled_classification = cmd;
+      it->second.attribute = attribute;
     }
   }
   std::vector<mil_msgs::PerceptionObject> objects(id_object_map_->size());

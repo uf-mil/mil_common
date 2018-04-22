@@ -6,9 +6,13 @@ std_msgs/Header header
 # the user provided classification will be used for that objectid until batcave(?) is restarted. 
 string classification
 string labeled_classification
+string attribute
 
 # Pose of the object in ENU
 geometry_msgs/Pose pose        
+
+# Distance from base_link
+float32 distance
 
 # Size of the object, like markers, scale is applied first, then pose.
 geometry_msgs/Vector3 scale

@@ -10,7 +10,10 @@ std::vector<Eigen::Vector2d> boundary = {
     Eigen::Vector2d(100, 30), Eigen::Vector2d(100, -175)};
 void set_params(ros::NodeHandle& nh) {
   nh.getParam("/pcodar/executive_rate", params.executive_rate);
+  
   nh.getParam("/pcodar/ogrid_inflation_cell", params.ogrid_inflation_cell);
+  nh.getParam("/pcodar/distance_decay_factor", params.distance_decay_factor);
+
   nh.getParam("/pcodar/object_types", params.object_types);
   nh.getParam("/pcodar/object_colors", params.object_colors);
   nh.getParam("/pcodar/number_persistant_point_clouds",

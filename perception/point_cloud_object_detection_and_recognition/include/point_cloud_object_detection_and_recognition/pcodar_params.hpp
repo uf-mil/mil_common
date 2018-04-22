@@ -60,6 +60,7 @@ extern struct pcodar_params
 
     // How much to inflate the ogrid around each object
     int ogrid_inflation_cell = 2;
+    float distance_decay_factor = 0.001;
 
     // Yes these params are not technically mil_common general, however, they can be changed. 
     std::vector<std::string> object_types = {"scan_the_code", "shooter"};

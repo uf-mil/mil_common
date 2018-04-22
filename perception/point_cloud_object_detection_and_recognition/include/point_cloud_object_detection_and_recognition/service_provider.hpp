@@ -18,6 +18,9 @@
 #include <dynamic_reconfigure/client.h>
 #include <navigator_tools/BoundsConfig.h>
 
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/classification.hpp>
+
 namespace pcodar {
 class service_provider {
  public:
