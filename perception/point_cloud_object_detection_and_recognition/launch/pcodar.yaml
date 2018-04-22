@@ -6,7 +6,7 @@ max_hits_in_cell: 200
 min_object_seperation_distance: 3.0
 
 ogrid_inflation_cell: 2
-distance_decay_factor: 0.01
+distance_decay_factor: 0.05
 
 executive_rate: 10
 
@@ -16,18 +16,18 @@ filter_points_leaf_size_x: 0.2
 filter_points_leaf_size_y: 0.2
 filter_points_leaf_size_z: 0.2
 
-outier_removal_std_dev_thresh: 2.0
+outier_removal_std_dev_thresh: 0.1
 outier_removal_mean_k: 10
 
 remove_points_near_lidar_distance: 5
 
 icp_max_corespondence_distance: 0.1
-icp_max_iterations: 40
+icp_max_iterations: 10
 icp_transformation_epsilon: 1E-8
 icp_euclidean_fitness_epsilon: 1.0
 
-cluster_tolerance_m: 4.4
-cluster_min_num_points: 2
+cluster_tolerance_m: 4.3
+cluster_min_num_points: 1
 cluster_max_num_points: 25000
 
 max_distance_for_association: 2

@@ -27,7 +27,7 @@ class VectorToMarker(object):
     def publish(self, vec):
         rospy.logdebug('vector received')
         marker = Marker()
-        marker.header = vec.header
+        marker.header.frame_id = vec.header.frame_id
         marker.type = 0
         marker.color = self.color
         marker.scale.x = 0.1
