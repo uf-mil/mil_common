@@ -1,0 +1,11 @@
+<launch>
+
+  <!--node pkg="mil_passive_sonar" type="passive_sonar_driver.py" name="passive_sonar" /-->
+
+  <test test-name="multilateration" pkg="mil_passive_sonar"
+        type="multilateration_test.py" />
+
+  <test test-name="driver_integration" pkg="mil_passive_sonar"
+        type="driver_integration_test.py" />
+
+</launch>

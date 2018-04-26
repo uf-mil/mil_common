@@ -1,0 +1,23 @@
+# Physical parameters
+c : 1.484 # speed of sound in medium (micrometers / microsecond)
+receiver_locations: # position of non-reference receivers (reference (origin) not included)
+  - [ 25.4,    0,  0]
+  - [-25.4,    0,  0]
+  - [    0, 25.4,  0]
+
+# Input parameters
+input_mode : sim
+input_timeout : 1.0
+pinger_freq : 35000
+sampling_freq : 500000
+locating_frame : map
+pinger_frame : pinger
+receiver_array_frame : hydrophones
+noise_sigma : 0.1
+
+# Algorithm parameters
+method : "LS"
+target_frequency : 35000
+upsampling_factor : 1
+min_variance : 200
+observation_buffer_size : 200

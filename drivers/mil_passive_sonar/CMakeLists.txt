@@ -1,19 +1,39 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(mil_passive_sonar)
 
-find_package(catkin REQUIRED COMPONENTS
-  rospy
+find_package(catkin
+  REQUIRED COMPONENTS
+    rospy
+    message_generation
+    message_runtime
+    tf2
+)
+
+add_service_files(
+  FILES
+    GetPulseHeading.srv
+    EstimatePingerPosition2D.srv
+    EstimatePingerPosition3D.srv
+    ResetPositionEstimate.srv
+    StartLogging.srv
+    SaveLog.srv
+    SetFrequency.srv
 )
 
 catkin_python_setup()
 
+generate_messages(DEPENDENCIES std_msgs)
+
 catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES sub8_sonar
-#  CATKIN_DEPENDS rospy
-#  DEPENDS system_lib
+  CATKIN_DEPENDS
+    message_generation
+    message_runtime
+    tf2
 )
 
-include_directories(
-  ${catkin_INCLUDE_DIRS}
-)
+include_directories(${catkin_INCLUDE_DIRS})
+
+if(CATKIN_ENABLE_TESTING)
+  find_package(rostest REQUIRED)
+  add_rostest(test/mil_passive_sonar.test)
+endif()

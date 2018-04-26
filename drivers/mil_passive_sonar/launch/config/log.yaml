@@ -1,0 +1,22 @@
+# Physical parameters
+c : 1.484 # speed of sound in medium (micrometers / microsecond)
+receiver_locations: # position of non-reference receivers (reference (origin) not included)
+  - [ 25.4,    0,  0]
+  - [-25.4,    0,  0]
+  - [    0, 25.4,  0]
+
+# Input parameters
+input_mode : log
+input_timeout : 1.0
+sampling_freq : 486618
+log_filename : "/home/santiago/sonar_log.npz"
+locating_frame : map
+receiver_array_frame : hydrophones
+
+# Algorithm parameters
+method : "LS"
+target_frequency : 35000
+upsampling_factor : 20
+min_variance : 200
+observation_buffer_size : 200
+

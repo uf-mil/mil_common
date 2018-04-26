@@ -1,0 +1,7 @@
+<launch>
+  <arg name="input" default="log" />
+
+  <rosparam file="$(find mil_passive_sonar)/launch/config/$(arg input).yaml"  ns="passive_sonar"
+            subst_value="true" />
+  <node pkg="mil_passive_sonar" type="driver.py" name="passive_sonar" output="screen"/>
+</launch>

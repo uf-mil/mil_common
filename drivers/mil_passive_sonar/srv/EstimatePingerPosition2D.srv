@@ -1,0 +1,12 @@
+# Request to estimate the position of a pinger using passive sonar
+
+---
+# Response
+Header header
+
+# Number of heading observations used to calculate position estimate
+uint32  num_headings
+
+# Position estimate
+float32 x
+float32 y

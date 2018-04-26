@@ -1,0 +1,13 @@
+# Request to receive heading to pinger
+string method
+
+---
+
+# Heading unit vector in body frame
+Header header
+float32 x      # In meters
+float32 y
+float32 z
+float32[] dtoa # In microseconds
+bool success
+string err_str
