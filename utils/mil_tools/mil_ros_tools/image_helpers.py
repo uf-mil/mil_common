@@ -49,15 +49,17 @@ def get_image_msg(ros_image, encoding='bgr8'):
 
 
 class Image_Publisher(object):
+
     def __init__(self, topic, encoding="bgr8", queue_size=1):
         '''Create an essentially normal publisher, that will publish images without conversion hassle'''
         self.bridge = CvBridge()
         self.encoding = encoding
         self.im_pub = rospy.Publisher(topic, Image, queue_size=queue_size)
 
-    def publish(self, cv_image):
+    def publish(self, cv_image, frame_id=""):
         try:
             image_message = self.bridge.cv2_to_imgmsg(cv_image, self.encoding)
+            image_message.header.frame_id = frame_id
             self.im_pub.publish(image_message)
         except CvBridgeError, e:
             # Intentionally absorb CvBridge Errors
@@ -65,6 +67,7 @@ class Image_Publisher(object):
 
 
 class Image_Subscriber(object):
+
     def __init__(self, topic, callback=None, encoding="bgr8", queue_size=1):
         '''Calls $callback on each image every time a new image is published on $topic
         Assumes topic of type "sensor_msgs/Image"
@@ -138,6 +141,7 @@ class StereoImageSubscriber(object):
     Also contains a helper function to block until the camera info messages for both
     cameras are received.
     '''
+
     def __init__(self, left_image_topic, right_image_topic, callback=None, slop=None, encoding="bgr8", queue_size=10):
         '''
         Contruct a StereoImageSubscriber
@@ -180,9 +184,11 @@ class StereoImageSubscriber(object):
             lambda info: setattr(self, 'camera_info_right', info), queue_size=queue_size)
         image_sub_right = message_filters.Subscriber(right_image_topic, Image)
 
-        # Use message_filters library to set up synchronized subscriber to both image topics
+        # Use message_filters library to set up synchronized subscriber to both
+        # image topics
         if slop is None:
-            self._image_sub = message_filters.TimeSynchronizer([image_sub_left, image_sub_right], queue_size)
+            self._image_sub = message_filters.TimeSynchronizer(
+                [image_sub_left, image_sub_right], queue_size)
         else:
             self._image_sub = message_filters.ApproximateTimeSynchronizer([image_sub_left, image_sub_right],
                                                                           queue_size, slop)
