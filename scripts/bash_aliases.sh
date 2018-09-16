@@ -42,7 +42,7 @@ imageproc() # Example usage: imageproc /camera/seecam
 alias srcbrc="source ~/.bashrc"
 
 # Workspace specific and shared tmux sockets
-alias tmux="tmux -L \$(echo \$CATKIN_DIR | rev | cut -d '/' -f1 | rev)"
+alias my-tmux="tmux -L \$(echo \$CATKIN_DIR | rev | cut -d '/' -f1 | rev)"
 alias shared-tmux="tmux -L mil_ws"
 
 # Catkin workspace management
