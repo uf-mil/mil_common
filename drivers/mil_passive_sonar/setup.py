@@ -5,9 +5,7 @@ from catkin_pkg.python_setup import generate_distutils_setup
 
 # fetch values from package.xml
 setup_args = generate_distutils_setup(
-    packages=['mil_passive_sonar',
-              'multilateration',
-              'paulboard_driver'],
+    packages=['multilateration'],
 )
 
 setup(**setup_args)

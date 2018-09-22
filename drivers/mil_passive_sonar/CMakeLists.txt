@@ -3,15 +3,21 @@ project(mil_passive_sonar)
 
 find_package(catkin REQUIRED COMPONENTS
   rospy
+  std_msgs
+  message_generation
 )
 
 catkin_python_setup()
 
+add_message_files(
+  FILES
+  Ping.msg
+)
+
+generate_messages(DEPENDENCIES std_msgs)
+
+
 catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES sub8_sonar
-#  CATKIN_DEPENDS rospy
-#  DEPENDS system_lib
 )
 
 include_directories(
