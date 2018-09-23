@@ -127,6 +127,7 @@ void point_cloud_builder::add_point_cloud(
   const auto filtered_buffered_cloud =
       filter(buffered_cloud, e_velodyne_to_enu, real_time_);
   mega_cloud_ = filtered_buffered_cloud;
+  ROS_INFO("MEGA CLOUD SIZE=%ld , prev_clouds_size=%ld", mega_cloud_.size(), prev_clouds_.size());
   real_time_ = true;
 }
 
