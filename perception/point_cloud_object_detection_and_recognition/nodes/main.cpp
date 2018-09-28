@@ -7,6 +7,6 @@ int main(int argc, char* argv[])
 
     pcodar::pcodar_controller c(nh);
     c.initialize();
-    c.execute();
+    ros::spin();
     return 0;
 }
