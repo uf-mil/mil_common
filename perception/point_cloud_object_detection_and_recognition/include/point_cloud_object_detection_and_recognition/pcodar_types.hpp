@@ -5,6 +5,7 @@
 
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <pcl/PointIndices.h>
 
 namespace pcodar
 {
@@ -22,13 +23,18 @@ enum class classification
 
 const std::vector<std::string> classification_strings{"scan_the_code", "shooter",    "tower_buoy", "buoy",
                                                       "dock",          "large_buoy", "unknown",    "spurious"};
-using point_cloud = pcl::PointCloud<pcl::PointXYZ>;
-using point_cloud_ptr = pcl::PointCloud<pcl::PointXYZ>::Ptr;
+using point_t = pcl::PointXYZ;
+using point_cloud = pcl::PointCloud<point_t>;
+using point_cloud_ptr = point_cloud::Ptr;
+using point_cloud_const_ptr = point_cloud::ConstPtr;
 using id_object_map = std::unordered_map<uint, mil_msgs::PerceptionObject>;
 using id_object_map_ptr = std::shared_ptr<id_object_map>;
 
 using id_label_map = std::unordered_map<uint, std::pair<std::string, std::string>>;
 using id_label_map_ptr = std::shared_ptr<id_label_map>;
+
+using cluster_t = pcl::PointIndices;
+using clusters_t = std::vector<cluster_t>;
 
 
 }  // namespace pcodar

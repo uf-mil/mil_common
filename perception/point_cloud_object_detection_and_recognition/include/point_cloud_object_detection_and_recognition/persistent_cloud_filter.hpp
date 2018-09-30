@@ -13,11 +13,9 @@ class PersistentCloudFilter
 {
 public:
   PersistentCloudFilter();
-  void filter(point_cloud& pc);
-  void set_bounds(point_cloud bounds
+  void filter(point_cloud_const_ptr in, point_cloud& pc);
 private:
   pcl::StatisticalOutlierRemoval<pcl::PointXYZ> outlier_filter_;
-  point_cloud_ptr bounds;
 };
 
 } // namespace pcodar

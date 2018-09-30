@@ -9,6 +9,7 @@
 #include "persistent_cloud_filter.hpp"
 #include "object_associator.hpp"
 #include "point_cloud_builder.hpp"
+#include "object_map.hpp"
 
 #include <nav_msgs/Odometry.h>
 #include <ros/ros.h>
@@ -79,7 +80,7 @@ private:
   point_cloud_builder persistent_cloud_builder_;
   object_detector detector_;
 
-  id_object_map_ptr id_object_map_;
+  ObjectMap objects_;
   id_label_map_ptr id_label_map_;
   uint32_t highest_id_;
 

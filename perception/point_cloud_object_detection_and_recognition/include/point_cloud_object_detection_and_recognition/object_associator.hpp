@@ -2,6 +2,7 @@
 
 #include "pcodar_params.hpp"
 #include "pcodar_types.hpp"
+#include "object_map.hpp"
 
 #include <mil_msgs/PerceptionObject.h>
 
@@ -24,8 +25,7 @@ class associator
     associator()
     {
     }
-    std::vector<association_unit> associate(const id_object_map& object_map,
-                                            const std::vector<mil_msgs::PerceptionObject>& objects);
+    void associate(ObjectMap& prev_objects, point_cloud const& pc, clusters_t clusters);
 };
 
 }  // namespace pcod#pragma once

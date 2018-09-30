@@ -10,8 +10,9 @@ PersistentCloudFilter::PersistentCloudFilter():
   outlier_filter_.setMeanK(params.outier_removal_mean_k);
 }
 
-void PersistentCloudFilter::filter(point_cloud& pc)
+void PersistentCloudFilter::filter(point_cloud_const_ptr in, point_cloud& pc)
 {
+  outlier_filter_.setInputCloud(in);
   outlier_filter_.filter(pc);
 }
 

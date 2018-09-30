@@ -13,8 +13,8 @@ class InputCloudFilter
 {
 public:
   InputCloudFilter();
-  void filter(point_cloud& pc);
-
+  void filter(point_cloud_const_ptr in, point_cloud& pc);
+  void set_bounds(point_cloud_ptr bounds);
 private:
   pcl::CropHull<pcl::PointXYZ> bounds_filter_;
   pcl::CropBox<pcl::PointXYZ> robot_filter_;

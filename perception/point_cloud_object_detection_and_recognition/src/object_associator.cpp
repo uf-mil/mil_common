@@ -6,9 +6,9 @@ namespace pcodar
 {
 uint NO_ASSOCIATION_FOUND = std::numeric_limits<uint>::max();
 
-std::vector<association_unit> associator::associate(const id_object_map& object_map,
-                                                    const std::vector<mil_msgs::PerceptionObject>& objects)
+void associator::associate(ObjectMap& prev_objects, point_cloud const& pc, clusters_t clusters)
 {
+/* TODO
     std::vector<association_unit> association_units;
 
     for (uint i = 0; i != objects.size(); ++i)
@@ -51,5 +51,7 @@ std::vector<association_unit> associator::associate(const id_object_map& object_
         }
     }
     return association_units;
+*/
 }
+
 }  // namespace pcodar
