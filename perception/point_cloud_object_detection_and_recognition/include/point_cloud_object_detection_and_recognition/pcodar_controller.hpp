@@ -44,7 +44,7 @@ private:
   bool DBQuery_cb(mil_msgs::ObjectDBQuery::Request &req,
                   mil_msgs::ObjectDBQuery::Response &res);
   bool transform_point_cloud(const sensor_msgs::PointCloud2& pcloud2, point_cloud& out);
-
+  bool transform_to_global(std::string const& frame, ros::Time const& time, Eigen::Affine3d& out);
 private:
   ros::NodeHandle nh_;
   dynamic_reconfigure::Client<mil_bounds::BoundsConfig> bounds_client_;

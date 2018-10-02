@@ -27,8 +27,6 @@ using point_t = pcl::PointXYZ;
 using point_cloud = pcl::PointCloud<point_t>;
 using point_cloud_ptr = point_cloud::Ptr;
 using point_cloud_const_ptr = point_cloud::ConstPtr;
-using id_object_map = std::unordered_map<uint, mil_msgs::PerceptionObject>;
-using id_object_map_ptr = std::shared_ptr<id_object_map>;
 
 using id_label_map = std::unordered_map<uint, std::pair<std::string, std::string>>;
 using id_label_map_ptr = std::shared_ptr<id_label_map>;

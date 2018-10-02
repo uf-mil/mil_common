@@ -14,9 +14,7 @@ namespace pcodar
 class point_cloud_builder
 {
    public:
-    point_cloud_builder(): prev_clouds_(params.number_persistant_point_clouds)
-    {
-    }
+    point_cloud_builder();
     point_cloud_ptr get_point_cloud();
     void add_point_cloud(const point_cloud_ptr& pc);
 

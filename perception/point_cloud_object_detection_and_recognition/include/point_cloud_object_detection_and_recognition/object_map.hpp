@@ -2,6 +2,7 @@
 
 #include "pcodar_params.hpp"
 #include "pcodar_types.hpp"
+#include "object.hpp"
 
 #include <mil_msgs/PerceptionObjectArray.h>
 
@@ -14,7 +15,7 @@ class ObjectMap
 public:
   ObjectMap();
   mil_msgs::PerceptionObjectArray to_msg();
-  id_object_map objects_;
+  std::unordered_map<uint, Object> objects_;
   size_t greatest_id;
 };
 

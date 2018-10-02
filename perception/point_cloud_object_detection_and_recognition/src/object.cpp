@@ -4,6 +4,9 @@
 #include <opencv2/imgproc/imgproc.hpp>
 
 
+#include <tf2/LinearMath/Quaternion.h>
+
+
 namespace pcodar
 {
 
@@ -30,14 +33,14 @@ mil_msgs::PerceptionObject Object::to_msg()
   for (point_t const& point: points_)
   {
       cv_points.emplace_back(point.x, point.y);
-      if (p.z > max_z)
+      if (point.z > max_z)
       {
-          max_z = p.z;
+          max_z = point.z;
       }
 
-      if (p.z < min_z)
+      if (point.z < min_z)
       {
-          min_z = p.z;
+          min_z = point.z;
       }
       geometry_msgs::Point32 g_point;
       g_point.x = point.x;
@@ -56,7 +59,8 @@ mil_msgs::PerceptionObject Object::to_msg()
   p_obj.scale.y = rect.size.height;
   p_obj.scale.z = max_z - min_z;
 
-  auto quat = tf::createQuaternionFromRPY(0.0, 0.0, rect.angle * 3.14159 / 180);
+  tf2::Quaternion quat;
+  quat.setRPY(0., 0., rect.angle * 3.14159 / 180);
   quat.normalize();
   p_obj.pose.orientation.x = quat.x();
   p_obj.pose.orientation.y = quat.y();
