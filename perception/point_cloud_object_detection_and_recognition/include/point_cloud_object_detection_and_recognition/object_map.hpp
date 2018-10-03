@@ -16,7 +16,8 @@ public:
   ObjectMap();
   mil_msgs::PerceptionObjectArray to_msg();
   std::unordered_map<uint, Object> objects_;
-  size_t greatest_id;
+  void add_object(point_cloud pc);
+  size_t highest_id_;
 };
 
 } // namespace pcodar

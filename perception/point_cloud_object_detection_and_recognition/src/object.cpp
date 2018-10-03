@@ -10,25 +10,24 @@
 namespace pcodar
 {
 
-Object::Object(point_cloud const& _pc):
-  points_(_pc)
+Object::Object(point_cloud const& _pc)
 {
+  update_points(_pc);
 }
 
 void Object::update_points(point_cloud const& pc)
 {
   points_ = pc;
+  update_msg();
 }
 
-mil_msgs::PerceptionObject Object::to_msg()
+void Object::update_msg()
 {
   std::vector<cv::Point2f> cv_points;
   double min_z = std::numeric_limits<double>::max();
   double max_z = -std::numeric_limits<double>::max();
 
-  mil_msgs::PerceptionObject p_obj;
-
-  p_obj.classification = "UNKNOWN";
+  msg_.classification = "UNKNOWN";
 
   for (point_t const& point: points_)
   {
@@ -47,26 +46,28 @@ mil_msgs::PerceptionObject Object::to_msg()
       g_point.y = point.y;
       g_point.z = point.z;
 
-      p_obj.points.emplace_back(g_point);
+      msg_.points.emplace_back(g_point);
   }
   cv::RotatedRect rect = cv::minAreaRect(cv_points);
-  p_obj.header.frame_id = "enu";
-  p_obj.header.stamp = ros::Time();
-  p_obj.pose.position.x = rect.center.x;
-  p_obj.pose.position.y = rect.center.y;
-  p_obj.pose.position.z = (max_z + min_z) / 2.0;
-  p_obj.scale.x = rect.size.width;
-  p_obj.scale.y = rect.size.height;
-  p_obj.scale.z = max_z - min_z;
+  center_.x = rect.center.x;
+  center_.y = rect.center.y;
+  center_.z = (max_z + min_z) / 2.0;
+  msg_.header.frame_id = "enu";
+  msg_.header.stamp = ros::Time();
+  msg_.pose.position.x = rect.center.x;
+  msg_.pose.position.y = rect.center.y;
+  msg_.pose.position.z = center_.z;
+  msg_.scale.x = rect.size.width;
+  msg_.scale.y = rect.size.height;
+  msg_.scale.z = max_z - min_z;
 
   tf2::Quaternion quat;
   quat.setRPY(0., 0., rect.angle * 3.14159 / 180);
   quat.normalize();
-  p_obj.pose.orientation.x = quat.x();
-  p_obj.pose.orientation.y = quat.y();
-  p_obj.pose.orientation.z = quat.z();
-  p_obj.pose.orientation.w = quat.w();
-  return p_obj;
+  msg_.pose.orientation.x = quat.x();
+  msg_.pose.orientation.y = quat.y();
+  msg_.pose.orientation.z = quat.z();
+  msg_.pose.orientation.w = quat.w();
 }
 
 

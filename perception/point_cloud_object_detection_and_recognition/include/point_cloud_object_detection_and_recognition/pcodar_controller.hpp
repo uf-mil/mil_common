@@ -57,18 +57,14 @@ private:
   tf2_ros::TransformListener tf_listener;
 
   // Publishers
-  ros::Publisher pub_grid_;
   ros::Publisher pub_objects_;
   ros::Publisher pub_pcl_;
-  ros::Publisher pub_pcl_old_;
 
   // Subscriber
   ros::Subscriber pc_sub;
-  ros::Subscriber odom_sub;
 
   // Place to hold the latest message
   sensor_msgs::PointCloud2 latest_point_cloud_;
-  nav_msgs::OdometryConstPtr latest_odom_;
 
   // Visualization
   marker_manager marker_manager_;

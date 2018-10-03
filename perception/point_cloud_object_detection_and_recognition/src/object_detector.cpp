@@ -25,4 +25,5 @@ clusters_t object_detector::get_clusters(point_cloud_const_ptr pc)
   return cluster_indices;
 }
 
+
 } // namespace pcodar

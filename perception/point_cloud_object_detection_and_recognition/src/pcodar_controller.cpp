@@ -58,10 +58,9 @@ void pcodar_controller::initialize() {
   modify_classification_service_ = nh_.advertiseService(
       "/database/requests", &pcodar_controller::DBQuery_cb, this);
 
-  // Subscribe to odom and the velodyne
+  // Subscribe pointcloud
   pc_sub = nh_.subscribe("/velodyne_points", 1, &pcodar_controller::velodyne_cb,
                          this);
-  odom_sub = nh_.subscribe("/odom", 1, &pcodar_controller::odom_cb, this);
 
   // Publish occupancy grid and visualization markers
   pub_pcl_ = nh_.advertise<point_cloud>("persist_pcl", 1);
@@ -111,10 +110,6 @@ void pcodar_controller::velodyne_cb(
   auto objects_msg = objects_.to_msg();
   marker_manager_.update_markers(objects_msg);
   pub_objects_.publish(objects_msg);
-}
-
-void pcodar_controller::odom_cb(const nav_msgs::OdometryConstPtr &odom) {
-  latest_odom_ = odom;
 }
 
 bool pcodar_controller::transform_to_global(std::string const& frame, ros::Time const& time, Eigen::Affine3d& out)

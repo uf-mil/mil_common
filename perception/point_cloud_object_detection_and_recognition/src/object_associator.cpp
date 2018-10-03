@@ -1,5 +1,6 @@
 #include <point_cloud_object_detection_and_recognition/object_associator.hpp>
 
+#include <pcl/search/octree.h>
 #include <mil_msgs/PerceptionObject.h>
 
 namespace pcodar
@@ -8,50 +9,44 @@ uint NO_ASSOCIATION_FOUND = std::numeric_limits<uint>::max();
 
 void associator::associate(ObjectMap& prev_objects, point_cloud const& pc, clusters_t clusters)
 {
-/* TODO
-    std::vector<association_unit> association_units;
-
-    for (uint i = 0; i != objects.size(); ++i)
-    {
-        const auto& object = objects[i];
-        double min_distance = std::numeric_limits<double>::max();
-        int min_id = -1;
-        std::set<uint> associated_ids;
-
-        for (const auto& id_object : object_map)
-        {
-            if (associated_ids.find(id_object.first) != associated_ids.end())
-            {
-                continue;
-            }
-
-            const double diff_x = object.pose.position.x - id_object.second.pose.position.x;
-            const double diff_y = object.pose.position.y - id_object.second.pose.position.y;
-            const double diff_z = object.pose.position.z - id_object.second.pose.position.z;
-
-            const double norm = sqrt(diff_x * diff_x + diff_y * diff_y + diff_z * diff_z);
-            if (norm < min_distance && norm < params.max_distance_for_association)
-            {
-                min_distance = norm;
-                // min_id = i;
-                min_id = id_object.first;
-            }
-        }
-
-        if (min_id == -1)
-        {
-            association_units.push_back({.index = i, .object_id = NO_ASSOCIATION_FOUND});
-        }
-        else
-        {
-            uint id = static_cast<uint>(min_id);
-            association_units.push_back({.index = i, .object_id = id});
-            // std::cout << "Association: " << i << " " << id << std::endl;
-            associated_ids.insert(id);
+    if (prev_objects.objects_.empty()) {
+        for (cluster_t const& cluster : clusters) {
+            point_cloud cluster_pc(pc, cluster.indices);
+            ROS_INFO("NEW OBJECT");
+            prev_objects.add_object(cluster_pc);
         }
     }
-    return association_units;
-*/
+
+    pcl::search::Octree<point_t> search(0.01);
+    for (cluster_t const& cluster : clusters)
+    {
+        point_cloud_ptr cluster_pc = boost::make_shared<point_cloud>(pc, cluster.indices);
+        search.setInputCloud(cluster_pc);
+        float min = std::numeric_limits<float>::max();
+        std::unordered_map<uint, Object>::iterator it = prev_objects.objects_.end();
+        for (auto pair = prev_objects.objects_.begin(); pair != prev_objects.objects_.end(); ++pair)
+        {
+            int index = 0;
+            float distance = 0.;
+            search.approxNearestSearch((*pair).second.center_, index, distance);
+            ROS_INFO("DISTANCE IS %f MAX_DISTANCE=%f", distance, params.max_distance_for_association);
+            if (distance < min && distance < params.max_distance_for_association)
+            {
+                min = distance;
+                it = pair;
+            }
+        }
+        ROS_INFO("MIN DISTANCE is %f", min);
+
+        if (it == prev_objects.objects_.end()) {
+            // Add to object
+            ROS_INFO("NEW OBJECT");
+            prev_objects.add_object(*cluster_pc);
+        } else {
+            ROS_INFO("UPDATING POINTS for %ud", (*it).first);
+            (*it).second.update_points(*cluster_pc);
+        }
+    }
 }
 
 }  // namespace pcodar

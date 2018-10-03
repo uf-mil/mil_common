@@ -12,8 +12,10 @@ namespace pcodar
 {
 class object_detector
 {
-   public:
+public:
     object_detector() {};
     clusters_t get_clusters(point_cloud_const_ptr pc);
+private:
+    static double nearest_pair_distance(point_cloud const& pc1, point_cloud const& pc2);
 };
 }

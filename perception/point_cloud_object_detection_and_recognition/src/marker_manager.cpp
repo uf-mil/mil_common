@@ -78,10 +78,10 @@ void marker_manager::update_markers(mil_msgs::PerceptionObjectArray const& objec
     marker_delete.action = visualization_msgs::Marker::DELETEALL;
     markers.markers.push_back(marker_delete);
 
-    visualization_msgs::Marker object_marker;
-    visualization_msgs::Marker text_marker;
     for (const auto& object : objects.objects)
     {
+        visualization_msgs::Marker object_marker;
+        visualization_msgs::Marker text_marker;
         get_object_marker(object, object_marker);
         get_text_marker(object, text_marker);
         markers.markers.push_back(object_marker);
