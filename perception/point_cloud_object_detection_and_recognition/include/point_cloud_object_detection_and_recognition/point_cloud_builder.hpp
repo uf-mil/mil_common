@@ -1,6 +1,5 @@
 #pragma once
 
-#include "pcodar_params.hpp"
 #include "pcodar_types.hpp"
 
 #include <sensor_msgs/PointCloud2.h>
@@ -17,6 +16,7 @@ class point_cloud_builder
     point_cloud_builder();
     point_cloud_ptr get_point_cloud();
     void add_point_cloud(const point_cloud_ptr& pc);
+    void update_config(Config const& config);
 
    private:
     point_cloud_ptr mega_cloud_;

@@ -3,7 +3,6 @@
 #include "marker_manager.hpp"
 #include "ogrid_manager.hpp"
 #include "object_detector.hpp"
-#include "pcodar_params.hpp"
 #include "pcodar_types.hpp"
 #include "input_cloud_filter.hpp"
 #include "persistent_cloud_filter.hpp"
@@ -22,12 +21,12 @@
 #include <tf2_ros/transform_listener.h>
 #include <tf2_eigen/tf2_eigen.h>
 
+#include <dynamic_reconfigure/server.h>
+
 #include <boost/circular_buffer.hpp>
 
 namespace pcodar
 {
-using point_cloud = pcl::PointCloud<pcl::PointXYZ>;
-using point_cloud_ptr = pcl::PointCloud<pcl::PointXYZ>::Ptr;
 
 class pcodar_controller
 {
@@ -45,9 +44,11 @@ private:
                   mil_msgs::ObjectDBQuery::Response &res);
   bool transform_point_cloud(const sensor_msgs::PointCloud2& pcloud2, point_cloud& out);
   bool transform_to_global(std::string const& frame, ros::Time const& time, Eigen::Affine3d& out);
+  void ConfigCallback(Config const& config, uint32_t level);
 private:
   ros::NodeHandle nh_;
   dynamic_reconfigure::Client<mil_bounds::BoundsConfig> bounds_client_;
+  dynamic_reconfigure::Server<Config> config_server_;
 
   ros::ServiceServer modify_classification_service_;
 

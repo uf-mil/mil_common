@@ -5,14 +5,13 @@
 
 namespace pcodar
 {
-uint NO_ASSOCIATION_FOUND = std::numeric_limits<uint>::max();
 
 void associator::associate(ObjectMap& prev_objects, point_cloud const& pc, clusters_t clusters)
 {
     if (prev_objects.objects_.empty()) {
         for (cluster_t const& cluster : clusters) {
             point_cloud cluster_pc(pc, cluster.indices);
-            ROS_INFO("NEW OBJECT");
+            ROS_INFO("NEW OBJECT points=%lu", cluster_pc.size());
             prev_objects.add_object(cluster_pc);
         }
     }
@@ -29,24 +28,29 @@ void associator::associate(ObjectMap& prev_objects, point_cloud const& pc, clust
             int index = 0;
             float distance = 0.;
             search.approxNearestSearch((*pair).second.center_, index, distance);
-            ROS_INFO("DISTANCE IS %f MAX_DISTANCE=%f", distance, params.max_distance_for_association);
-            if (distance < min && distance < params.max_distance_for_association)
+            //ROS_INFO("DISTANCE IS %f MAX_DISTANCE=%f", distance, params.max_distance_for_association);
+            if (distance < min && distance < max_distance_)
             {
                 min = distance;
                 it = pair;
             }
         }
-        ROS_INFO("MIN DISTANCE is %f", min);
+        //ROS_INFO("MIN DISTANCE is %f", min);
 
         if (it == prev_objects.objects_.end()) {
             // Add to object
-            ROS_INFO("NEW OBJECT");
+            ROS_INFO("NEW OBJECT with points=%lu", cluster_pc->size());
             prev_objects.add_object(*cluster_pc);
         } else {
-            ROS_INFO("UPDATING POINTS for %ud", (*it).first);
+            ROS_INFO("UPDATING POINTS for %ud point=%lu", (*it).first, cluster_pc->size());
             (*it).second.update_points(*cluster_pc);
         }
     }
+}
+
+void associator::update_config(Config const& config)
+{
+  ROS_INFO("Associator max distance %f", config.associator_max_distance);
 }
 
 }  // namespace pcodar

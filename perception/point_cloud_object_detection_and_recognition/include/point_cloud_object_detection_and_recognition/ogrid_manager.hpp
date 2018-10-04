@@ -1,7 +1,6 @@
 #pragma once
 
 #include "pcodar_types.hpp"
-#include "pcodar_params.hpp"
 #include "object_map.hpp"
 
 #include <nav_msgs/Odometry.h>
@@ -22,14 +21,17 @@ namespace pcodar
 class ogrid_manager
 {
   public:
+    ogrid_manager();
     void initialize(ros::NodeHandle& nh);
     void update_ogrid(ObjectMap const& objects);
     void draw_boundary();
+    void update_config(Config const& config);
   private:
-    double resolution_meters_per_cell_ = 0.3;
     cv::Point point_in_ogrid(point_t point);
-    uint32_t width_meters_ = 1000;
-    uint32_t height_meters_ = 1000;
+    double resolution_meters_per_cell_;
+    uint32_t width_meters_;
+    uint32_t height_meters_;
+    uint32_t inflation_cells_;
     ros::Publisher pub_ogrid_;
     cv::Mat ogrid_mat_;
     nav_msgs::OccupancyGrid ogrid_;

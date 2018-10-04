@@ -1,6 +1,5 @@
 #pragma once
 
-#include "pcodar_params.hpp"
 #include "pcodar_types.hpp"
 
 namespace pcodar

@@ -18,7 +18,7 @@ void InputCloudFilter::filter(point_cloud_const_ptr in, point_cloud& pc)
   point_cloud_ptr tmp(boost::make_shared<point_cloud>());
   bounds_filter_.setInputCloud(in);
   bounds_filter_.filter(*tmp);
-  
+
   robot_filter_.setInputCloud(tmp);
   robot_filter_.filter(pc);
 }

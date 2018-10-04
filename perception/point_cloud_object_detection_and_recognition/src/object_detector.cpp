@@ -12,18 +12,20 @@ clusters_t object_detector::get_clusters(point_cloud_const_ptr pc)
   tree->setInputCloud(pc);
 
   clusters_t cluster_indices;
-  pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
 
-  // The radius around each point to check for neighbors in meters.
-  ec.setClusterTolerance(params.cluster_tolerance_m);
-  ec.setMinClusterSize(params.cluster_min_num_points);
-  ec.setMaxClusterSize(params.cluster_max_num_points);
-  ec.setSearchMethod(tree);
-  ec.setInputCloud(pc);
-  ec.extract(cluster_indices);
+  cluster_extractor_.setSearchMethod(tree);
+  cluster_extractor_.setInputCloud(pc);
+  cluster_extractor_.extract(cluster_indices);
 
   return cluster_indices;
 }
 
+void object_detector::update_config(Config const& config)
+{
+  ROS_INFO("Cluster tolerance=%f min=%d max=%d", config.cluster_tolerance_m, config.cluster_min_points, config.cluster_max_points);
+  cluster_extractor_.setClusterTolerance(config.cluster_tolerance_m);
+  cluster_extractor_.setMinClusterSize(config.cluster_min_points);
+  cluster_extractor_.setMaxClusterSize(config.cluster_max_points);
+}
 
 } // namespace pcodar

@@ -1,34 +1,9 @@
 #include <point_cloud_object_detection_and_recognition/pcodar_controller.hpp>
-
-#include <mil_msgs/PerceptionObject.h>
-#include <mil_msgs/PerceptionObjectArray.h>
-#include <nav_msgs/OccupancyGrid.h>
 #include <pcl_ros/transforms.h>
-
-#include <pcl/features/normal_3d.h>
-#include <pcl/kdtree/kdtree.h>
 #include <pcl/point_cloud.h>
-#include <pcl/registration/icp.h>
-#include <pcl/segmentation/extract_clusters.h>
-
-#include <pcl/filters/statistical_outlier_removal.h>
-#include <pcl/filters/voxel_grid.h>
-#include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
-
 #include <pcl_ros/point_cloud.h>
-
-
-
-#include <eigen_conversions/eigen_msg.h>
-
-#include <ros/callback_queue.h>
-#include <ros/console.h>
-
-#include <chrono>
 #include <functional>
-#include <opencv2/core.hpp>
-#include <opencv2/imgproc/imgproc.hpp>
 
 namespace pcodar {
 
@@ -36,9 +11,9 @@ pcodar_controller::pcodar_controller(ros::NodeHandle _nh)
     : nh_(_nh),
       bounds_client_("/bounds_server", std::bind(&pcodar_controller::bounds_update_cb, this, std::placeholders::_1)),
       tf_listener(tf_buffer_, nh_),
-      global_frame_("enu") {
-  ros::NodeHandle private_nh("~");
-  set_params(private_nh);
+      global_frame_("enu"),
+      config_server_() {
+  config_server_.setCallback(std::bind(&pcodar_controller::ConfigCallback, this, std::placeholders::_1, std::placeholders::_2));
   id_label_map_= std::make_shared<id_label_map>();
 
   // TODO: pull from params
@@ -49,6 +24,15 @@ pcodar_controller::pcodar_controller(ros::NodeHandle _nh)
   robot_footprint.push_back(point_t(-2.4384, 1.2192, 0.));
   // Give the filter the footprint of the robot to remove from pointcloud
   input_cloud_filter_.set_robot_footprint(robot_footprint);
+}
+
+void pcodar_controller::ConfigCallback(Config const& config, uint32_t level)
+{
+  if (!level || level & 1) persistent_cloud_builder_.update_config(config);
+  if (!level || level & 2) persistent_cloud_filter_.update_config(config);
+  if (!level || level & 4) detector_.update_config(config);
+  if (!level || level & 8) ass.update_config(config);
+  if (!level || level & 16) ogrid_manager_.update_config(config);
 }
 
 void pcodar_controller::initialize() {

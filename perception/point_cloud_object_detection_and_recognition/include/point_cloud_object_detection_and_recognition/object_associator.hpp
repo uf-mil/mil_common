@@ -1,6 +1,5 @@
 #pragma once
 
-#include "pcodar_params.hpp"
 #include "pcodar_types.hpp"
 #include "object_map.hpp"
 
@@ -11,21 +10,16 @@
 namespace pcodar
 {
 
-extern uint NO_ASSOCIATION_FOUND;
-
-struct association_unit
-{
-    uint index;
-    uint object_id;
-};
-
 class associator
 {
-   public:
+public:
     associator()
     {
     }
+    void update_config(Config const& config);
     void associate(ObjectMap& prev_objects, point_cloud const& pc, clusters_t clusters);
+private:
+    double max_distance_;
 };
 
-}  // namespace pcod#pragma once
+}  // namespace pcodar

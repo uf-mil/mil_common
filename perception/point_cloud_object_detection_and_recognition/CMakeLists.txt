@@ -20,6 +20,12 @@ find_package(catkin REQUIRED COMPONENTS
 # 				     BASE CODE 					  #
 ###################################################
 
+catkin_python_setup()
+
+generate_dynamic_reconfigure_options(
+  cfg/PCODAR.cfg
+)
+
 # C++ Flags
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -g")
 
@@ -41,13 +47,13 @@ add_library(pcodar ${SOURCES})
 # Link all the relevant libs
 target_link_libraries(pcodar ${catkin_LIBRARIES} ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
 
-# Weird catkin stuff, We will never know what it does. 
-add_dependencies(pcodar pcodar_generate_messages_cpp  mil_msgs_generate_messages_cpp ${catkin_EXPORTED_TARGETS})
+# Weird catkin stuff, We will never know what it does.
+add_dependencies(pcodar ${catkin_EXPORTED_TARGETS})
+
 
 catkin_package(INCLUDE_DIRS include
                LIBRARIES pcodar
                CATKIN_DEPENDS roscpp sensor_msgs std_msgs mil_msgs tf tf2 eigen_conversions pcl_ros)
-catkin_python_setup()
 
 # executable that actually runs everything
 add_executable(pcodar_node nodes/main.cpp)

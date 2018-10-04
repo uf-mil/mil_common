@@ -7,8 +7,13 @@
 #include <pcl/point_types.h>
 #include <pcl/PointIndices.h>
 
+#include <point_cloud_object_detection_and_recognition/PCODARConfig.h>
+
 namespace pcodar
 {
+
+using Config = point_cloud_object_detection_and_recognition::PCODARConfig;
+
 enum class classification
 {
     SCAN_THE_CODE,

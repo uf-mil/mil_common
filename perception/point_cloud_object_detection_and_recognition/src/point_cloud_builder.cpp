@@ -1,23 +1,9 @@
 #include <point_cloud_object_detection_and_recognition/point_cloud_builder.hpp>
 
-#include <eigen_conversions/eigen_msg.h>
-
-#include <pcl/common/transforms.h>
-#include <pcl/filters/voxel_grid.h>
-#include <pcl/point_types.h>
-
-#include <pcl/filters/random_sample.h>
-#include <pcl/filters/statistical_outlier_removal.h>
-
-#include <pcl_conversions/pcl_conversions.h>
-
-#include <tf2/convert.h>
-
 namespace pcodar {
 
-point_cloud_builder::point_cloud_builder() 
- : prev_clouds_(params.number_persistant_point_clouds),
-   mega_cloud_(boost::make_shared<point_cloud>())
+point_cloud_builder::point_cloud_builder()
+ : mega_cloud_(boost::make_shared<point_cloud>())
 {
 
 }
@@ -36,6 +22,12 @@ void point_cloud_builder::add_point_cloud(const point_cloud_ptr& pc)
   for (const auto& cloud : prev_clouds_) {
       *mega_cloud_ += *cloud;
   }
+}
+
+void point_cloud_builder::update_config(Config const& config)
+{
+  ROS_INFO("accumulator_number_persistant_clouds %d", config.accumulator_number_persistant_clouds);
+  prev_clouds_.set_capacity(config.accumulator_number_persistant_clouds);
 }
 
 point_cloud_ptr point_cloud_builder::get_point_cloud()
