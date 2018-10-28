@@ -1,34 +1,24 @@
-# mil_passive_sonar
-This package includes the main algorithm to find the direction of a pinger. It also includes some debug tools
+# Sonar Driver
 
-# Running:
-Ensure that hydrophones -> ros is running and publishing a `mil_passive_sonar/Ping` msg.
+This script interfaces with Jake's sonar board and provides a ROS service that returns the location and time of emission of the last heard pinger pulse.
 
-Then run `roslaunch mil_passive_sonar mil_passive_sonar.lauch`
+## How to run and use
+To start the driver, run:
 
-`mil_passive_sonar/FindPinger`
+    rosrun mil_passive_sonar sonar.launch
 
-# Conventions used:
+> Note: make sure that port, and baud rate, and hydrophone locations are loaded into the parameter server. See launch/test.launch for an example.
 
-Incoming data is assumed to be from four hydrophones, indexed from 0 to 3,
-laid out as follows:
+In order to ask for hydrophone information:
 
-       1
-       |      x ^
-    3--0        |
-       |   y <--0 z (out of screen)
-       2
+    rosservice call /sonar/get_pinger_pulse *double_tab*
 
-The resulting published position point is in the coordinate frame shown above.
+The service should respond with the x, y, and z of the last heard pinger
+pulse. Remember that this should be considered the tip of an arrow
+pointing in the direction of the pinger, the range is completely unreliable
+and varies wildly.
 
-# Other trivia:
-
-`mil_passive_sonar.yaml` contains `dish_h`, `dist_h4`, and `v_sound`.
-`dist_h` is the distance (in meters, of course) from hydrophone 0 to 1 (and
-equivalently, 0 to 2). `dist_h4` is the distance from 0 to 3.
-
-The deltas (seen internally and published on the debug topic) are _delays_, so
-one being more positive means that the ping was heard by that hydrophone
-later.
-
-`v_sound` is speed of sound in meters/sec. Typically measured value is 1482m/s at 20c.
+## TODO
++ This package is not yet fully set up to use the paulbaurd. The interface to make this happen would be simple to implement.
++ This package should estimate the least squares solution for the actual 3d position of the pinger.
++ Visualize both individual heading veactors and the LS position estimate.
