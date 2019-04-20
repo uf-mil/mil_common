@@ -1,0 +1,4 @@
+uint8 actuator_address
+bool actuator_on
+---
+uint8 sent_byte

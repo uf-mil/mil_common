@@ -2,5 +2,5 @@
 from utils import CommandPacket, ReceivePacket
 from application_packet import ApplicationPacket, ApplicationPacketWrongIdentifierException
 from simulation import SimulatedCANDevice, SimulatedCANDevice, ExampleSimulatedEchoDevice, ExampleSimulatedAdderDevice
-from device import CANDeviceHandle, ExampleEchoDeviceHandle, ExampleAdderDeviceHandle
+from device import CANDeviceHandle, ExampleEchoDeviceHandle, ExampleAdderDeviceHandle, ActuatorDeviceHandle, ActuatorAddressOutOfRangeException
 from board import USBtoCANBoard

@@ -5,6 +5,7 @@ import random
 import string
 from application_packet import ApplicationPacket
 from rospy_tutorials.srv import AddTwoInts
+from mil_usb_to_can.srv import SetActuator
 
 
 class CANDeviceHandle(object):
@@ -33,6 +34,42 @@ class CANDeviceHandle(object):
         @param data: the data payload to send to the device (string/bytes object)
         '''
         return self._driver.send_data(data, can_id=can_id)
+
+
+class ActuatorAddressOutOfRangeException(Exception):
+    '''
+    Exception thrown when the set_actuator service is called with an invalid address
+    '''
+    def __init__(self, address):
+        super(ActuatorAddressOutOfRangeException, self).__init__(
+            "actuator_address must be any integer from 0 to 63. The given address was {}".format(address))
+
+
+class ActuatorDeviceHandle(CANDeviceHandle):
+    '''
+    An implementation of a CANDeviceHandle which will handle
+    a device that controls pneumatic actuators.
+    '''
+
+    WRITE_BIT = 0x80
+    ON_BIT = 0x40
+
+    def __init__(self, *args, **kwargs):
+        super(ActuatorDeviceHandle, self).__init__(*args, **kwargs)
+        # Setup a timer to check valid functionality every second
+        self._srv = rospy.Service('~set_actuator', SetActuator, self.on_set_req)
+
+    def on_set_req(self, req):
+        if not isinstance(req.actuator_address, int) or req.actuator_address < 0 or req.actuator_address > 63:
+            raise ActuatorAddressOutOfRangeException(req.actuator_address)
+        message = self.WRITE_BIT + req.actuator_address
+        if req.actuator_on:
+            message += self.ON_BIT
+        self.send_data(chr(message))
+        return message
+
+    def on_data(self, data):
+        print 'Received {}'.format(ord(data))
 
 
 class ExampleEchoDeviceHandle(CANDeviceHandle):
