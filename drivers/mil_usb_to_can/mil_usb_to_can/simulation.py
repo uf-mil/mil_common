@@ -2,6 +2,8 @@
 from mil_misc_tools.serial_tools import SimulatedSerial
 from utils import ReceivePacket, CommandPacket
 import struct
+import rospy
+from constants import ThrusterKillBoardConstants as tkb
 
 
 class SimulatedCANDevice(object):
@@ -69,6 +71,44 @@ class ExampleSimulatedAdderDevice(SimulatedCANDevice):
         c = a + b
         res = struct.pack('Bi', 37, c)
         self.send_data(res)
+
+
+class SimulatedThrusterKillBoard(SimulatedCANDevice):
+    def __init__(self, *args, **kwargs):
+        super(SimulatedThrusterKillBoard, self).__init__(*args, **kwargs)
+        self.go = False
+        self.isSoftKilled = False
+        self.thrusterValues = [0] * 8
+        # TODO: better way of sending these messages
+        self.softTimer = rospy.Timer(rospy.Duration(0.1), self._advertise_soft_kill_status)
+        self.goTimer = rospy.Timer(rospy.Duration(0.5), self._advertise_go_status)
+
+    def on_data(self, data):
+        if ord(data[0]) not in [tkb.KILL_MESSAGE, tkb.THRUSTER_MESSAGE]:
+            return
+        if ord(data[0]) == tkb.KILL_MESSAGE:  # TODO: check if proper length?
+            message = struct.unpack('5B', data)
+            if message == (tkb.KILL_MESSAGE, tkb.COMMAND, tkb.SOFT_KILL, tkb.ASSERTED, tkb.END):
+                self.isSoftKilled = True
+            elif message == (tkb.KILL_MESSAGE, tkb.COMMAND, tkb.SOFT_KILL, tkb.UNASSERTED, tkb.END):
+                self.isSoftKilled = False
+        elif ord(data[0]) == tkb.THRUSTER_MESSAGE:
+            _, thruster, value = struct.unpack('2Bf', data)
+            self.thrusterValues[thruster] = value
+            print ('Thruster {} set to {}'.format(thruster, value))
+
+    def _advertise_soft_kill_status(self, *args):
+        if (self.isSoftKilled):
+            killResponse = struct.pack("5B", tkb.KILL_MESSAGE, tkb.RESPONSE, tkb.SOFT_KILL, tkb.ASSERTED, tkb.END)
+            print('Soft Kill')
+            self.send_data(killResponse)
+        else:
+            return
+
+    def _advertise_go_status(self, *args):
+        assertedByte = tkb.ASSERTED if self.go else tkb.UNASSERTED
+        message = struct.pack("3B", tkb.GO, assertedByte, tkb.END)
+        self.send_data(message)
 
 
 class SimulatedUSBtoCAN(SimulatedSerial):

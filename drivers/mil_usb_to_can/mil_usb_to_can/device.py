@@ -2,6 +2,8 @@
 import rospy
 import struct
 from rospy_tutorials.srv import AddTwoInts
+from constants import ThrusterKillBoardConstants as tkb
+from constants import ThrusterID
 
 
 class CANDeviceHandle(object):
@@ -74,3 +76,48 @@ class ExampleAdderDeviceHandle(CANDeviceHandle):
         if flag != 37:
             return -1
         return my_sum
+
+
+class ThrusterKillBoardHandle(CANDeviceHandle):
+    '''
+    CANDevice handle which can send 'kill' and 'go' messages and
+    receive status from the thruster kill board
+
+    '''
+    def __init__(self, *args, **kwargs):
+        super(ThrusterKillBoardHandle, self).__init__(*args, **kwargs)
+        self.timer = rospy.Timer(rospy.Duration(1.0), self.test_cb)
+
+    def soft_kill(self, asserted):
+        '''
+        Sends message to kill/unkill the thrusters.
+        @param asserted: boolean to specify whether to kill (true) or unkill (false)
+        '''
+        assertByte = tkb.ASSERTED if asserted else tkb.UNASSERTED
+        killCommand = struct.pack('5B', tkb.KILL_MESSAGE, tkb.COMMAND, tkb.SOFT_KILL, assertByte, tkb.END)
+        self.send_data(killCommand)
+
+    def send_thruster_msg(self, thruster, value):
+        '''
+        @param thruster: the thruster (0-7) to control (use Thrusters class)
+        @param value: value to send to the thruster (between -1 and 1, where 0 is full stop)
+        '''
+        thrusterCommand = struct.pack('2Bf', tkb.THRUSTER_MESSAGE, thruster, value)
+        self.send_data(thrusterCommand)
+
+    def get_kill_status(self):
+        print self.request_data(5)
+
+    def get_go_status(self):
+        try:
+            print self.request_data(3)
+        except:
+            pass
+
+    def test_cb(self, *args):
+        self.soft_kill(True)
+        self.send_thruster_msg(ThrusterID.FHL, -1)
+        self.send_thruster_msg(ThrusterID.FHR, 1)
+        self.send_thruster_msg(ThrusterID.BVR, 0.234)
+        self.get_go_status()
+        # self.get_kill_status()
