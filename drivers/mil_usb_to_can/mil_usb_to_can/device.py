@@ -3,9 +3,10 @@ import rospy
 import struct
 import random
 import string
+import threading
 from application_packet import ApplicationPacket
 from rospy_tutorials.srv import AddTwoInts
-from mil_usb_to_can.srv import SetActuator
+from mil_usb_to_can.srv import SetActuator, GetActuator
 
 
 class CANDeviceHandle(object):
@@ -42,7 +43,7 @@ class ActuatorAddressOutOfRangeException(Exception):
     '''
     def __init__(self, address):
         super(ActuatorAddressOutOfRangeException, self).__init__(
-            "actuator_address must be any integer from 0 to 63. The given address was {}".format(address))
+            "actuator_address must be any integer from 0 to 11. The given address was {}".format(address))
 
 
 class ActuatorDeviceHandle(CANDeviceHandle):
@@ -51,25 +52,57 @@ class ActuatorDeviceHandle(CANDeviceHandle):
     a device that controls pneumatic actuators.
     '''
 
-    WRITE_BIT = 0x80
-    ON_BIT = 0x40
+    IDENTIFIER_BYTE = 'A'
+    NUM_ADDRESSES = 0x0B
 
     def __init__(self, *args, **kwargs):
         super(ActuatorDeviceHandle, self).__init__(*args, **kwargs)
-        # Setup a timer to check valid functionality every second
-        self._srv = rospy.Service('~set_actuator', SetActuator, self.on_set_req)
+        self._set_srv = rospy.Service('~set_actuator', SetActuator, self.on_set_req)
+        self._get_srv = rospy.Service('~get_actuator', GetActuator, self.on_get_req)
+        self._actuator_on = [False for i in range(self.NUM_ADDRESSES)]
+        self._data_lock = [threading.Condition() for i in range(self.NUM_ADDRESSES)]
 
     def on_set_req(self, req):
-        if not isinstance(req.actuator_address, int) or req.actuator_address < 0 or req.actuator_address > 63:
+        if (
+            not isinstance(req.actuator_address, int) or
+            req.actuator_address < 0 or
+            req.actuator_address > self.NUM_ADDRESSES
+        ):
             raise ActuatorAddressOutOfRangeException(req.actuator_address)
-        message = self.WRITE_BIT + req.actuator_address
+        message = self.IDENTIFIER_BYTE + chr(req.actuator_address) + chr(1)
         if req.actuator_on:
-            message += self.ON_BIT
-        self.send_data(chr(message))
-        return message
+            message += chr(1)
+        else:
+            message += chr(0)
+        self.send_data(message)
+        return reduce((lambda a, b: a * pow(2, 8) + b), [ord(char) for char in message])
+
+    def on_get_req(self, req):
+        if not isinstance(req.actuator_address, int) or req.actuator_address < 0 or req.actuator_address > 0x0B:
+            raise ActuatorAddressOutOfRangeException(req.actuator_address)
+        self._data_lock[req.actuator_address].acquire()
+        message = self.IDENTIFIER_BYTE + chr(req.actuator_address) + chr(0) + chr(0)
+        self.send_data(message)
+        self._data_lock[req.actuator_address].wait()
+        response = self._actuator_on[req.actuator_address]
+        self._data_lock[req.actuator_address].release()
+        return response
 
     def on_data(self, data):
-        print 'Received {}'.format(ord(data))
+        data_bytes = [ord(char) for char in data]
+        if data_bytes[0] != 0x41 or len(data_bytes) != 4:
+            raise Exception("data recieved by actuator handler does not match protocol")
+        address = data_bytes[1]
+        if not isinstance(address, int) or address < 0 or address > 0x0B:
+            raise ActuatorAddressOutOfRangeException(address)
+        self._data_lock[address].acquire()
+        if data_bytes[2] == 1:
+            state = True
+        else:
+            state = False
+        self._actuator_on[address] = state
+        self._data_lock[address].notifyAll()
+        self._data_lock[address].release()
 
 
 class ExampleEchoDeviceHandle(CANDeviceHandle):

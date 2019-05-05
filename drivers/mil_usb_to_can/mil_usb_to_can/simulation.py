@@ -2,7 +2,9 @@
 from mil_misc_tools.serial_tools import SimulatedSerial
 from utils import ReceivePacket, CommandPacket
 from application_packet import ApplicationPacket
+from device import ActuatorAddressOutOfRangeException
 import struct
+import rospy
 
 
 class SimulatedCANDevice(object):
@@ -105,3 +107,44 @@ class SimulatedUSBtoCAN(SimulatedSerial):
         p = CommandPacket.from_bytes(data)
         self.send_to_bus(p.filter_id, p.data, from_mobo=True)
         return len(data)
+
+
+class SimulatedActuatorDevice(SimulatedCANDevice):
+    '''
+    Software implementation of an actuator board.
+    On sends, stores the transmited data in a buffer.
+    When data is requested, it echos this data back.
+    '''
+
+    NUM_ADDRESSES = 0x0B
+
+    def __init__(self, *args, **kwargs):
+        super(SimulatedActuatorDevice, self).__init__(*args, **kwargs)
+        self._actuator_on = [False for i in range(self.NUM_ADDRESSES)]
+
+    def on_data(self, data):
+        data_bytes = [ord(char) for char in data]
+        if data_bytes[0] != 0x41 or len(data_bytes) != 4:
+            raise Exception("data recieved by actuator device does not match protocol")
+        address = data_bytes[1]
+        if not isinstance(address, int) or address < 0 or address > 0x0B:
+            raise ActuatorAddressOutOfRangeException(address)
+        if data_bytes[2] == 0:
+            # read state
+            on = 1 if self._actuator_on[address] else 0
+            message = 'A' + chr(address) + chr(on) + chr(0)
+            self.send_data(message)
+        elif data_bytes[2] == 1:
+            # set state
+            if data_bytes[3] == 0:
+                # turn actuator off
+                self._actuator_on[address] = False
+                rospy.loginfo('turning off actuator {}'.format(address))
+            elif data_bytes[3] == 1:
+                # turn actuator on
+                self._actuator_on[address] = True
+                rospy.loginfo('turning on actuator {}'.format(address))
+            else:
+                raise Exception("data recieved by actuator device does not match protocol")
+        else:
+            raise Exception("data recieved by actuator device does not match protocol")

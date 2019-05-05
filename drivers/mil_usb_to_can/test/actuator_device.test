@@ -7,7 +7,7 @@
     device_handles:
       "8": mil_usb_to_can.ActuatorDeviceHandle
     simulated_devices:
-      "8": mil_usb_to_can.ExampleSimulatedEchoDevice
+      "8": mil_usb_to_can.SimulatedActuatorDevice
     </rosparam>
   </node>
 

@@ -10,6 +10,7 @@ catkin_python_setup()
 add_service_files(
   FILES
   SetActuator.srv
+  GetActuator.srv
 )
 generate_messages()
 
