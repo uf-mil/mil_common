@@ -1,0 +1,79 @@
+<?xml version="1.0"?>
+
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <!-- Macro for a minimal collision block (for when you do not want collision block but gazebo needs one) -->
+  <xacro:macro name="no_collision">
+    <collision>
+      <geometry>
+        <cylinder length="${0.000001}" radius="${0.000001}" />
+      </geometry>
+      <origin xyz="0 0 0" rpy="0 ${0.5*pi} 0"/>
+    </collision>
+  </xacro:macro>
+
+  <xacro:macro name="forward_looking_sonar"
+    params="name parent_link:='base_link' topic mass update_rate
+      samples fov width height *inertia *origin *visual">
+    <!-- Sensor link -->
+    <link name="${name}">
+      <inertial>
+        <xacro:insert_block name="inertia" />
+        <mass value="${mass}" />
+        <origin xyz="0 0 0" rpy="0 0 0" />
+      </inertial>
+      <visual>
+        <geometry>
+          <mesh filename="file://$(find mil_gazebo)/meshes/p900.dae" scale="1 1 1"/>
+        </geometry>
+      </visual>
+      <xacro:no_collision/>
+    </link>
+
+    <joint name="${name}_sonar_joint" type="revolute">
+      <xacro:insert_block name="origin" />
+      <parent link="${parent_link}" />
+      <child link="${name}" />
+      <limit upper="0" lower="0" effort="0" velocity="0" />
+      <axis xyz="1 0 0"/>
+    </joint>
+
+    <link name="${name}/sonar_optical_frame"/>
+    
+    <gazebo reference="${name}">
+      <sensor name="${name}/image_sonar" type="depth">
+        <camera>
+          <horizontal_fov>${fov}</horizontal_fov>
+          <image>
+            <width>${width}</width>
+            <height>${height}</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.1</near>
+            <far>17</far>
+          </clip>
+          <save enabled="false"> <!--Keeping save disabled to avoid filesystem overload -->
+            <path>/tmp/camera</path>
+          </save>
+        </camera>
+        <plugin filename="libsub8_sonar.so" name="sub8_sonar">
+          <topicName>${topic}</topicName>
+          <frameName>${name}/sonar_optical_frame</frameName>
+        </plugin>
+        <always_on>true</always_on>
+        <update_rate>${update_rate}</update_rate>
+      </sensor>
+    </gazebo>
+    
+    <joint name="${name}/sonar_optical_joint" type="fixed">
+      <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+      <parent link="${name}"/> 
+      <child link="${name}/sonar_optical_frame"/>
+    </joint>
+  
+  
+  </xacro:macro>
+</robot>
+
+
